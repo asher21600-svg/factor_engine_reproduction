@@ -43,7 +43,7 @@ def main():
     abl = {}
     for tag, use_bayes in [("with_bayes", True), ("without_bayes", False)]:
         eng, res = run(panel, iterations=ITERS, n_islands=2, micro_trials=TRIALS,
-                       use_bayes=use_bayes, seed=2)
+                       use_bayes=use_bayes, seed=2, objective="ic_only")
         abl[tag] = {"history": res.history, "best_fitness": round(res.best.fitness, 4),
                     "best_reward": round(res.best.reward, 4),
                     "best_transforms": sorted(t for t in res.best.transforms if t)}
@@ -55,7 +55,7 @@ def main():
     isl = {}
     for n_isl in (1, 2):
         eng, res = run(panel, iterations=ITERS, n_islands=n_isl, micro_trials=TRIALS,
-                       use_bayes=True, seed=3)
+                       use_bayes=True, seed=3, objective="ic_only")
         csi = best_on("csi300", res.best.code, res.best.params)
         isl[str(n_isl)] = {"best_fitness_mining": round(res.best.fitness, 4),
                            "csi300_test": csi,

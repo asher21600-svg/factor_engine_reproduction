@@ -2,8 +2,9 @@
 
 Optuna's TPE sampler is an Expected-Improvement method that splits trials at a
 performance quantile; we set that quantile to the paper's top-25% threshold
-(y* = top 25% of observed scores).  The objective is `combined_score` on the
-validation split (IC/ICIR aggregated across lags {1,3,5,10}).
+(y* = top 25% of observed scores).  The default objective is now V3
+portfolio-aware scoring on train/validation, while `ic_only` preserves the
+original paper-faithful validation `combined_score` path.
 
 The paper notes support for "TPE, Gaussian Process-based methods, and other
 probabilistic optimization algorithms" — `sampler='tpe'` (default) is used;
@@ -17,7 +18,7 @@ from dataclasses import dataclass
 import optuna
 
 from ..config import LAGS, BAYES_TOP_QUANTILE
-from ..eval import evaluate_factor
+from ..eval import evaluate_objective
 from ..factors.contract import score_factor, compile_factor, FactorRunError
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -31,6 +32,7 @@ class MicroResult:
     best_metrics: object
     n_trials: int
     history: list   # per-trial scores (for the Bayesian-vs-none ablation plot)
+    best_components: dict | None = None
 
 
 def _suggest(trial, name, spec):
@@ -46,17 +48,20 @@ def _suggest(trial, name, spec):
 def optimize_parameters(code: str, param_space: dict, panel,
                         split: str = "valid", lags=LAGS, primary_lag: int = 5,
                         n_trials: int = 20, sampler: str = "tpe",
-                        seed: int = 0, fixed: dict | None = None) -> MicroResult:
-    """Bayesian search over `param_space`; maximize combined_score on `split`."""
+                        seed: int = 0, fixed: dict | None = None,
+                        objective: str = "portfolio_v3") -> MicroResult:
+    """Bayesian search over `param_space`; maximize the configured objective."""
     fixed = fixed or {}
     fn = compile_factor(code)   # compile once; reuse across trials
 
     if not param_space:
         # nothing to tune — evaluate once with fixed params
         try:
-            m = evaluate_factor(score_factor(fn, panel, fixed), panel,
-                                lags=lags, primary_lag=primary_lag, split=split)
-            return MicroResult(dict(fixed), m.combined_score, m, 1, [m.combined_score])
+            obj = evaluate_objective(score_factor(fn, panel, fixed), panel,
+                                     code=code, params=fixed, objective=objective,
+                                     lags=lags, primary_lag=primary_lag, split=split)
+            return MicroResult(dict(fixed), obj.score, obj.metrics, 1, [obj.score],
+                               obj.components)
         except FactorRunError:
             return MicroResult(dict(fixed), float("-inf"), None, 1, [float("-inf")])
 
@@ -67,9 +72,10 @@ def optimize_parameters(code: str, param_space: dict, panel,
         for name, spec in param_space.items():
             params[name] = _suggest(trial, name, spec)
         try:
-            m = evaluate_factor(score_factor(fn, panel, params), panel,
-                                lags=lags, primary_lag=primary_lag, split=split)
-            score = m.combined_score
+            obj = evaluate_objective(score_factor(fn, panel, params), panel,
+                                     code=code, params=params, objective=objective,
+                                     lags=lags, primary_lag=primary_lag, split=split)
+            score = obj.score
         except FactorRunError:
             score = -1e9
         if score != score:    # NaN
@@ -92,9 +98,13 @@ def optimize_parameters(code: str, param_space: dict, panel,
     best_params.update(study.best_params)
     # recompute metrics at the best params (full bundle)
     try:
-        best_metrics = evaluate_factor(score_factor(fn, panel, best_params), panel,
-                                       lags=lags, primary_lag=primary_lag, split=split)
-        best_score = best_metrics.combined_score
+        best_obj = evaluate_objective(score_factor(fn, panel, best_params), panel,
+                                      code=code, params=best_params, objective=objective,
+                                      lags=lags, primary_lag=primary_lag, split=split)
+        best_metrics = best_obj.metrics
+        best_score = best_obj.score
+        best_components = best_obj.components
     except FactorRunError:
-        best_metrics, best_score = None, float("-inf")
-    return MicroResult(best_params, best_score, best_metrics, n_trials, history)
+        best_metrics, best_score, best_components = None, float("-inf"), None
+    return MicroResult(best_params, best_score, best_metrics, n_trials, history,
+                       best_components)

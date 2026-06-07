@@ -50,9 +50,20 @@ $PY scripts/02_run_evolution.py --panel csi300 --iterations 200 --islands 2 --tr
 #      # TEST THE SAME PATH THE ENGINE USES:
 #      $PY scripts/check_llm.py
 #      FE_REQUIRE_LLM=1 $PY scripts/02_run_evolution.py --panel csi300 --iterations 200 --use-llm
+#
+#    Default evolution path is V3 / production-oriented:
+#      objective=portfolio_v3, elite-rule=robust, patience=50
+#    Paper-faithful IC-only ablation:
+#      $PY scripts/02_run_evolution.py --panel csi300 --iterations 200 \
+#        --objective ic_only --elite-rule validation --patience 0
 
 # 3) evaluate paper-faithful: exact Alpha158 + Qlib LABEL0 + real index benchmark
 $PY scripts/04_evaluate.py --baseline alpha158 --label label --use-benchmark
+#    Default integration is also V3-oriented:
+#      factor-mode=orthogonal, label-mode=date_demeaned
+#    Raw comparison:
+#      $PY scripts/04_evaluate.py --baseline alpha158 --label label --use-benchmark \
+#        --factor-mode raw --label-mode raw
 
 # 4) ablations + 5) report
 $PY scripts/03_ablations.py

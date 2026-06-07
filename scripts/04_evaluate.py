@@ -77,14 +77,16 @@ def yearly_ic(preds, panel):
 
 def evaluate_universe(uni, evolved_code, evolved_params, elite_specs=None,
                       baseline="alpha_mini", label="fwd_ret_5", use_benchmark=False,
-                      gplearn=False):
+                      gplearn=False, factor_mode="orthogonal",
+                      label_mode="date_demeaned"):
     panel = pd.read_parquet(config.OUTPUTS / f"{uni}_panel.parquet")
     # provenance: real Qlib panels span 2008-2024 (~4133 dates); synthetic ~1500
     data_source = "real" if panel["datetime"].nunique() > 3000 else "synthetic"
     res = {"single_factor": {}, "model": {}, "backtest": {}, "yearly_ic": {},
            "paper": PAPER.get(uni, {}),
            "config": {"baseline": baseline, "label": label, "data_source": data_source,
-                      "benchmark": "index" if use_benchmark else "equal_weight"}}
+                      "benchmark": "index" if use_benchmark else "equal_weight",
+                      "factor_mode": factor_mode, "label_mode": label_mode}}
 
     # real index benchmark (paper-faithful) if requested & available
     bench = None
@@ -108,8 +110,10 @@ def evaluate_universe(uni, evolved_code, evolved_params, elite_specs=None,
     specs = {"baseline": [], "augmented": aug}
     for name, sp in specs.items():
         feat, cols = build_feature_matrix(panel, sp, with_baseline=True,
-                                          baseline=baseline, qlib_kwargs=qkw)
-        mr = train_predict(panel, feat, cols, label=label)
+                                          baseline=baseline, qlib_kwargs=qkw,
+                                          orthogonalize_factors=(name == "augmented"
+                                                                 and factor_mode == "orthogonal"))
+        mr = train_predict(panel, feat, cols, label=label, label_mode=label_mode)
         h = mr.test_metrics.headline()
         res["model"][name] = {"IC": h["IC"], "ICIR": h["ICIR"], "RIC": h["RIC"],
                               "RICIR": h["RICIR"], "n_features": len(cols)}
@@ -127,7 +131,7 @@ def evaluate_universe(uni, evolved_code, evolved_params, elite_specs=None,
                                    generations=6, population=400)
             feat, cols = build_feature_matrix(panel, [], with_baseline=True,
                                               baseline=baseline, qlib_kwargs=qkw, extra=gpf)
-            mr = train_predict(panel, feat, cols, label=label)
+            mr = train_predict(panel, feat, cols, label=label, label_mode=label_mode)
             h = mr.test_metrics.headline()
             res["model"]["gplearn"] = {"IC": h["IC"], "ICIR": h["ICIR"], "RIC": h["RIC"],
                                        "RICIR": h["RICIR"], "n_features": len(cols)}
@@ -168,6 +172,10 @@ def main():
                     help="use the real CSI index as backtest benchmark (needs Qlib)")
     ap.add_argument("--gplearn", action="store_true",
                     help="also run the GPLearn (genetic-programming) baseline arm")
+    ap.add_argument("--factor-mode", choices=["orthogonal", "raw"], default="orthogonal",
+                    help="integration mode for FE factors; default residualizes vs the baseline features")
+    ap.add_argument("--label-mode", choices=["date_demeaned", "raw"], default="date_demeaned",
+                    help="model target; date_demeaned is the excess/market-neutral default")
     ap.add_argument("--universes", nargs="*", default=["csi300", "csi500"])
     args = ap.parse_args()
 
@@ -180,21 +188,27 @@ def main():
     print("Discovered factor transforms:", evo["best_transforms"], "params:", evolved_params)
     print(f"elite factors (FS>{config.FS_THRESHOLD}): {len(elite_specs)} "
           f"-> augmented multi-factor model")
-    print(f"config: baseline={args.baseline} label={args.label} benchmark={'index' if args.use_benchmark else 'equal_weight'}")
+    print(f"config: baseline={args.baseline} label={args.label} "
+          f"label_mode={args.label_mode} factor_mode={args.factor_mode} "
+          f"benchmark={'index' if args.use_benchmark else 'equal_weight'}")
 
     out = {"evolution_summary": {k: evo[k] for k in
                                  ("panel", "best_transforms", "best_params", "seed_fitness",
                                   "best_fitness", "seed_reward", "best_reward", "elapsed_s",
                                   "n_evals", "n_nodes")},
            "run_config": {"baseline": args.baseline, "label": args.label,
+                          "label_mode": args.label_mode, "factor_mode": args.factor_mode,
                           "benchmark": "index" if args.use_benchmark else "equal_weight"},
            "universes": {}}
+    out["evolution_summary"]["objective"] = evo.get("config", {}).get("objective", "ic_only")
+    out["evolution_summary"]["elite_rule"] = evo.get("config", {}).get("elite_rule", "validation")
     for uni in args.universes:
         print(f"\n== evaluating {uni} ==")
         out["universes"][uni] = evaluate_universe(
             uni, evolved_code, evolved_params, elite_specs=elite_specs,
             baseline=args.baseline, label=args.label, use_benchmark=args.use_benchmark,
-            gplearn=args.gplearn)
+            gplearn=args.gplearn, factor_mode=args.factor_mode,
+            label_mode=args.label_mode)
         out["run_config"]["data_source"] = out["universes"][uni]["config"]["data_source"]
         sf = out["universes"][uni]["single_factor"]
         md = out["universes"][uni]["model"]

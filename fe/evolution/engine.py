@@ -10,7 +10,7 @@ Each iteration runs the four-stage pipeline on one island:
 
 Multiple islands evolve concurrently; every `migration_every` iterations each
 island's top-k programs migrate to the others (paper's multi-island design).
-Selection uses ONLY the validation reward — test metrics are never consulted
+Selection uses ONLY train/validation reward — test metrics are never consulted
 during search (recorded separately for honest out-of-sample reporting).
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..config import (UCT_C, N_ISLANDS, MIGRATION_EVERY, MIGRATION_TOP_K, LAGS)
-from ..eval import evaluate_factor
+from ..eval import evaluate_objective
 from ..factors.contract import score_factor, FactorRunError
 from .tree import ProgramNode, ProgramTree
 from .micro import optimize_parameters
@@ -47,6 +47,7 @@ class EvolutionConfig:
     seed: int = 0
     verbose: bool = True
     patience: int = 0                 # V3 #5: early-stop after N stagnant iters (0=off)
+    objective: str = "portfolio_v3"   # V3 default; use 'ic_only' for paper-faithful ablations
 
 
 @dataclass
@@ -77,14 +78,15 @@ class EvolutionEngine:
         self._llm_fails = 0          # consecutive LLM failures
         self._llm_disabled = False   # auto-disabled after repeated failures
 
-    # -- reward = combined_score on the validation split -------------------
+    # -- reward = configured train/validation objective --------------------
     def _evaluate(self, code, params):
         try:
-            m = evaluate_factor(score_factor(code, self.panel, params), self.panel,
-                                lags=self.cfg.lags, primary_lag=self.cfg.primary_lag,
-                                split=self.cfg.split)
+            obj = evaluate_objective(score_factor(code, self.panel, params), self.panel,
+                                     code=code, params=params, objective=self.cfg.objective,
+                                     lags=self.cfg.lags, primary_lag=self.cfg.primary_lag,
+                                     split=self.cfg.split)
             self._n_evals += 1
-            return m
+            return obj
         except FactorRunError:
             self._n_evals += 1
             return None
@@ -120,10 +122,11 @@ class EvolutionEngine:
         root = ProgramNode(code=self.seed_code, params={}, param_space=self.seed_param_space,
                            island=island, idea="initial seed program")
         if m is not None:
-            root.metrics = m
-            root.reward = m.combined_score
-            root.fitness = m.fitness
-            root.valid = np.isfinite(m.combined_score)
+            root.metrics = m.metrics
+            root.score_components = m.components
+            root.reward = m.score
+            root.fitness = m.metrics.fitness
+            root.valid = np.isfinite(m.score)
         root.visit_count = 1
         root.sum_reward = root.reward if np.isfinite(root.reward) else 0.0
         return root
@@ -133,12 +136,15 @@ class EvolutionEngine:
             return optimize_parameters(
                 code, param_space, self.panel, split=self.cfg.split,
                 lags=self.cfg.lags, primary_lag=self.cfg.primary_lag,
-                n_trials=self.cfg.micro_trials, seed=int(self.rng.integers(1 << 30)))
+                n_trials=self.cfg.micro_trials, seed=int(self.rng.integers(1 << 30)),
+                objective=self.cfg.objective)
         # ablation w/o Bayes: evaluate at default params only
-        m = self._evaluate(code, {})
+        obj = self._evaluate(code, {})
         from .micro import MicroResult
-        score = m.combined_score if m else float("-inf")
-        return MicroResult({}, score, m, 1, [score])
+        score = obj.score if obj else float("-inf")
+        metrics = obj.metrics if obj else None
+        components = obj.components if obj else None
+        return MicroResult({}, score, metrics, 1, [score], components)
 
     def _propose_llm(self, tree: ProgramTree, node: ProgramNode):
         """One LLM idea-generation attempt. Tracks failures and auto-disables the
@@ -224,6 +230,7 @@ class EvolutionEngine:
             transforms=set(node.transforms) | {getattr(mut, "tag", "")},
         )
         child.metrics = res.best_metrics
+        child.score_components = res.best_components or {}
         child.reward = res.best_score
         child.fitness = res.best_metrics.fitness if res.best_metrics else float("-inf")
         child.valid = np.isfinite(child.reward)
@@ -285,6 +292,7 @@ class EvolutionEngine:
                     clone = ProgramNode(
                         code=mig.code, params=dict(mig.params), param_space=dict(mig.param_space),
                         reward=mig.reward, fitness=mig.fitness, metrics=mig.metrics,
+                        score_components=dict(mig.score_components),
                         valid=mig.valid, idea=f"[migrant from island {k}] {mig.idea}",
                         change_summary="migration", transforms=set(mig.transforms),
                         feature_coords=mig.feature_coords,

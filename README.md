@@ -56,6 +56,18 @@ or data downloads to use a proxy. If your Python package index is misconfigured 
 mirror, set `FE_PIP_INDEX_URL=https://pypi.org/simple` or your preferred mirror. The run records the provider/model/base in
 `outputs/evolution.json` without storing the API key.
 
+By default, `scripts/02_run_evolution.py` now uses the V3 production path:
+
+- `--objective portfolio_v3`: train/validation robust score with stability, turnover, and complexity penalties.
+- `--elite-rule robust`: sign-consistent, parsimony-penalized elite selection instead of validation-only top-k.
+- `--patience 50`: plateau-aware early stopping.
+
+For a paper-faithful IC-only ablation, run:
+```bash
+python scripts/02_run_evolution.py --panel csi300 --iterations 200 \
+  --objective ic_only --elite-rule validation --patience 0
+```
+
 **Real Qlib A-share data (paper-faithful)** — no `qlib` package needed (a pure-NumPy `.bin`
 reader handles it); full guide in [REAL_DATA.md](REAL_DATA.md):
 ```bash

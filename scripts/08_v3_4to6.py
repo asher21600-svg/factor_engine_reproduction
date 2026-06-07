@@ -57,7 +57,7 @@ def main():
     before = evaluate_factor(score_factor(code, panel, declared), panel, split="valid")
     before_te = evaluate_factor(score_factor(code, panel, declared), panel, split="test")
     res = optimize_parameters(code, hidden_space, panel, split="valid",
-                              n_trials=30, seed=1, fixed=declared)
+                              n_trials=30, seed=1, fixed=declared, objective="ic_only")
     after_te = evaluate_factor(score_factor(code, panel, res.best_params), panel, split="test")
     print(f"  BEFORE (hidden=default): valid fit {before.fitness:+.3f}, test IC {before_te.headline()['IC']:+.4f}")
     print(f"  AFTER  (hidden tuned)  : valid fit {res.best_metrics.fitness:+.3f}, "

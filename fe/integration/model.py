@@ -30,7 +30,8 @@ class ModelResult:
 def build_feature_matrix(panel: pd.DataFrame, factor_specs: list | None = None,
                          with_baseline: bool = True, baseline: str = "alpha_mini",
                          qlib_kwargs: dict | None = None,
-                         extra: tuple | None = None) -> tuple[pd.DataFrame, list]:
+                         extra: tuple | None = None,
+                         orthogonalize_factors: bool = False) -> tuple[pd.DataFrame, list]:
     """factor_specs: list of (name, code, params). Returns (features_df, cols).
 
     baseline : 'alpha_mini' (portable, default) or 'alpha158' (exact Qlib
@@ -55,10 +56,17 @@ def build_feature_matrix(panel: pd.DataFrame, factor_specs: list | None = None,
         parts.append(base.set_index(["datetime", "instrument"]))
         cols += base_cols
 
+    base_long = parts[0].reset_index() if (with_baseline and parts) else None
     for name, code, params in (factor_specs or []):
-        sc = score_factor(code, panel, params).rename(columns={"value": name})
+        sc = score_factor(code, panel, params)
+        out_name = name
+        if orthogonalize_factors and base_long is not None and base_cols:
+            from .robust_elite import orthogonalize_vs_features
+            sc = orthogonalize_vs_features(sc, base_long, base_cols)
+            out_name = f"o_{name}" if not str(name).startswith("o_") else name
+        sc = sc.rename(columns={"value": out_name})
         parts.append(sc.set_index(["datetime", "instrument"]))
-        cols.append(name)
+        cols.append(out_name)
 
     if extra is not None:
         edf, ecols = extra
@@ -71,20 +79,24 @@ def build_feature_matrix(panel: pd.DataFrame, factor_specs: list | None = None,
 
 def train_predict(panel: pd.DataFrame, feat: pd.DataFrame, feature_cols: list,
                   label: str = "fwd_ret_5", primary_lag: int = 5,
-                  seed: int = 0) -> ModelResult:
+                  seed: int = 0, label_mode: str = "raw") -> ModelResult:
     import lightgbm as lgb
 
     keep = ["datetime", "instrument", label, "split"]
     data = feat.merge(panel[keep], on=["datetime", "instrument"], how="inner")
     data = data.replace([np.inf, -np.inf], np.nan)
+    target = label
+    if label_mode in ("date_demeaned", "excess"):
+        target = "_target_excess"
+        data[target] = data[label] - data.groupby("datetime")[label].transform("mean")
 
-    tr = data[(data["split"] == "train") & data[label].notna()].dropna(subset=feature_cols)
-    va = data[(data["split"] == "valid") & data[label].notna()].dropna(subset=feature_cols)
+    tr = data[(data["split"] == "train") & data[target].notna()].dropna(subset=feature_cols)
+    va = data[(data["split"] == "valid") & data[target].notna()].dropna(subset=feature_cols)
     if len(tr) < 100:
         raise RuntimeError("not enough training rows")
 
-    Xtr, ytr = tr[feature_cols], tr[label]
-    Xva, yva = (va[feature_cols], va[label]) if len(va) else (Xtr, ytr)
+    Xtr, ytr = tr[feature_cols], tr[target]
+    Xva, yva = (va[feature_cols], va[target]) if len(va) else (Xtr, ytr)
 
     model = lgb.LGBMRegressor(
         n_estimators=400, learning_rate=0.04, num_leaves=31,

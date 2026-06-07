@@ -53,10 +53,11 @@ def main():
     print("== scoring candidate pool on real CSI300 (train/valid/test) ==")
     cands = evaluate_candidates(_candidates(evo), p300)
     print(f"{'candidate':22s} {'IC_train':>9} {'IC_valid':>9} {'IC_test':>9} "
-          f"{'fit_val':>8} {'#par':>4} {'#hid':>4} {'signOK':>6}")
+          f"{'fit_val':>8} {'turn':>6} {'score':>8} {'#par':>4} {'#hid':>4} {'signOK':>6}")
     for c in sorted(cands, key=lambda c: c.fit_valid, reverse=True):
         print(f"{c.name:22s} {c.ic_train:+9.4f} {c.ic_valid:+9.4f} {c.ic_test:+9.4f} "
-              f"{c.fit_valid:+8.3f} {c.n_params:4d} {c.n_undeclared:4d} {str(c.sign_consistent):>6}")
+              f"{c.fit_valid:+8.3f} {c.turnover:6.3f} {c.robust_score:+8.3f} "
+              f"{c.n_params:4d} {c.n_undeclared:4d} {str(c.sign_consistent):>6}")
 
     vo = select_validation_only(cands, k=config.ELITE_TOP_NODES)
     rb = select_robust(cands, k=config.ELITE_TOP_NODES)
@@ -67,6 +68,9 @@ def main():
            "candidates": {c.name: {"ic_train": c.ic_train, "ic_valid": c.ic_valid,
                                    "ic_test": c.ic_test, "n_params": c.n_params,
                                    "n_undeclared": c.n_undeclared,
+                                   "turnover": c.turnover,
+                                   "min_year_ic": c.min_year_ic,
+                                   "objective_score": c.objective_score,
                                    "sign_consistent": c.sign_consistent} for c in cands},
            "universes": {}}
 

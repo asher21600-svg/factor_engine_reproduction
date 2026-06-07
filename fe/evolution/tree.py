@@ -32,6 +32,7 @@ class ProgramNode:
     reward: float = float("-inf")   # combined_score on the validation split
     fitness: float = float("-inf")  # Eq.5 fitness at the primary lag
     metrics: object = None          # FactorMetrics
+    score_components: dict = field(default_factory=dict)
     valid: bool = False
 
     # UCT bookkeeping

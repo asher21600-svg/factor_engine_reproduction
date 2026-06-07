@@ -8,6 +8,7 @@
 
 **Status summary:** Phases 0-5 are complete on real Qlib China A-share data, and the follow-up
 V3 protocol is implemented/demonstrated on the existing 300-iteration live Kimi/Moonshot run.
+The V3 path is now also wired as the default evolution/evaluation path.
 The current report is `outputs/reproduction_report.html` / `.pdf`.
 
 ---
@@ -68,7 +69,7 @@ This is a **hybrid: LLM-driven feature engineering × cross-sectional return pre
 | Phase 3 | Re-implement FE machinery | Complete: factor contract, metrics, UCT/CoE, Bayesian micro-search, multi-island engine, live LLM macro path, model, backtest |
 | Phase 4 | Run experiments and ablations | Complete: 300-iteration live Kimi/Moonshot CSI300 run, CSI300/CSI500 evaluation, Bayes/island ablations |
 | Phase 5 | Produce report artifacts | Complete: self-contained HTML and PDF report |
-| Phase 6 / V3 | Harden selection/integration after overfit diagnosis | Complete/demonstrated: robust elite selection, parsimony penalty, orthogonalization, portfolio-aware scoring, prompt/parser contract, plateau-aware stopping |
+| Phase 6 / V3 | Harden selection/integration after overfit diagnosis | Complete and now default: robust elite selection, parsimony penalty, orthogonalization, portfolio-aware scoring, prompt/parser contract, plateau-aware stopping |
 
 ## Scope & feasibility — what reproduces vs what is substituted
 
@@ -119,6 +120,36 @@ as documented limits rather than contradictions of the paper.
 - `scripts/04_evaluate.py` — Alpha158/label/benchmark evaluation. → **Phase 4b**
 - `scripts/05_build_report.py` — final HTML/PDF report. → **Phase 5**
 - `scripts/06_robust_elite.py`, `scripts/07_orthogonal_elite.py`, `scripts/08_v3_4to6.py` — V3 protocol demonstrations. → **Phase 6**
+
+## Default evolution path after V3
+
+The default run path is now production-oriented rather than validation-IC-only:
+
+```bash
+python scripts/02_run_evolution.py --panel csi300 --iterations 200 --use-llm
+```
+
+defaults to:
+
+- `--objective portfolio_v3`: train/validation objective with yearly stability, low-turnover, sign-consistency, parsimony, and hidden-knob penalties.
+- `--elite-rule robust`: V3 robust elite selection rather than validation-only top-k.
+- `--patience 50`: plateau-aware stopping.
+
+The paper-faithful ablation path remains available:
+
+```bash
+python scripts/02_run_evolution.py --panel csi300 --iterations 200 \
+  --objective ic_only --elite-rule validation --patience 0
+```
+
+Model evaluation also defaults to V3 integration discipline:
+
+```bash
+python scripts/04_evaluate.py --baseline alpha158 --label label --use-benchmark
+```
+
+defaults to orthogonalizing FE factors against the baseline feature space and training on a date-demeaned,
+excess-style target. Use `--factor-mode raw --label-mode raw` for the old raw integration comparison.
 
 ## Output checklist (from the skill)
 - [x] `REPRODUCTION_PLAN.md` answers the six questions

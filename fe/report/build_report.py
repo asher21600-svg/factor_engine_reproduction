@@ -107,6 +107,18 @@ def _basic_markdown(md: str) -> str:
             flush_list()
             i += 1
             continue
+        if stripped.startswith("```"):
+            flush_para()
+            flush_list()
+            code_lines = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                code_lines.append(lines[i].rstrip())
+                i += 1
+            if i < len(lines):
+                i += 1
+            out.append("<pre><code>" + html_lib.escape("\n".join(code_lines)) + "</code></pre>")
+            continue
         if stripped.startswith("|"):
             flush_para()
             flush_list()
@@ -233,6 +245,8 @@ code{background:#f3f3f3;padding:1px 5px;border-radius:4px;font-size:12px}
 .plan-appendix h3{font-size:17px;margin-top:22px}.plan-appendix h4{font-size:14px;margin:18px 0 6px;color:#444}
 .plan-appendix p,.plan-appendix li{font-size:13px}.plan-appendix ul,.plan-appendix ol{padding-left:22px}
 .plan-table{font-size:12px}.plan-table td,.plan-table th{text-align:left;vertical-align:top}
+pre{background:#f3f3f3;border-radius:6px;padding:10px;overflow:auto;font-size:12px}
+pre code{background:transparent;padding:0}
 """
 
 

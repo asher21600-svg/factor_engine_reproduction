@@ -195,14 +195,19 @@ def deterministic_mutation(node, rng) -> Mutation | None:
 SYSTEM_PROMPT = (
     "You are one of the most authoritative quantitative researchers at a top "
     "Wall Street hedge fund. You design and implement new alpha factors as "
-    "executable Polars programs to maximize predictive metrics (IC, ICIR, Rank "
-    "IC, Rank ICIR aggregated across 1/3/5/10-day horizons) while strictly "
+    "executable Polars programs to maximize net useful alpha: predictive metrics "
+    "(IC, ICIR, Rank IC, Rank ICIR aggregated across 1/3/5/10-day horizons), "
+    "train/validation robustness, yearly stability, low rank turnover, and "
+    "parsimony while strictly "
     "avoiding any look-ahead bias or data leakage. Factors take a pandas/Polars "
     "OHLCV frame and a `parameters` dict and return a Polars DataFrame with "
     "columns [instrument, datetime, Factor]. The primary target is Chinese "
     "A-share cross-sectional prediction on CSI300/CSI500-style daily OHLCV "
     "panels, where liquidity, turnover, short-horizon reversal, volatility "
-    "state, and price-volume confirmation often matter. Improve the CURRENT "
+    "state, and price-volume confirmation often matter. Prefer factors that add "
+    "incremental signal beyond Alpha158-style OHLCV features and survive trading "
+    "costs; avoid high-churn daily rank reshuffles and over-parameterized regime "
+    "fits. Improve the CURRENT "
     "program with targeted edits. Prefer exact SEARCH/REPLACE diffs. If exact "
     "matching is uncertain, provide a complete replacement `def factor(...)` "
     "program instead."
@@ -215,7 +220,7 @@ Preferred format:
 
 ###Analyse: <domain insight from comparing current vs original program and the lessons from the evolution history>
 
-###IDEA: <one concrete idea to raise the metrics; focus on both factor logic and tunable parameters>
+###IDEA: <one concrete idea to raise robust excess-return usefulness; mention expected turnover/stability effect>
 
 ###Code changes:
 <<<<<<< SEARCH
@@ -244,6 +249,8 @@ def factor(pricing_data, parameters):
     hardcoded defaults; they will be tuned regardless).
   - Keep ONE mutation theme per response; do not combine unrelated edits.
   - No look-ahead: only use information available at or before each datetime.
+  - Prefer low-turnover, yearly-stable factors that are likely orthogonal to
+    Alpha158-style price/volume features.
   - Add a one-line rationale tied to CSI300/CSI500 microstructure in ###IDEA.
 Example:
 {"w3": {"type": "float", "low": 0.3, "high": 0.9}, "smoothing_window": {"type": "int", "low": 3, "high": 20}}

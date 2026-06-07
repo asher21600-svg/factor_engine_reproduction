@@ -13,22 +13,12 @@ Test metrics are computed for REPORTING only — never used for selection.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 import pandas as pd
 
 from ..factors import score_factor
-from ..eval import evaluate_factor
-
-
-def _complexity(code: str, params: dict) -> tuple[int, int]:
-    """(#params the code reads, #undeclared hardcoded knobs)."""
-    used = set(re.findall(r'parameters\.get\(\s*["\']([^"\']+)', code or ""))
-    used.discard("epsilon")
-    declared = set((params or {}).keys())
-    undeclared = [u for u in used if u not in declared]
-    return len(used), len(undeclared)
+from ..eval import evaluate_factor, evaluate_objective, complexity_counts
 
 
 @dataclass
@@ -43,6 +33,9 @@ class Candidate:
     ic_test: float = float("nan")     # reporting only
     n_params: int = 0
     n_undeclared: int = 0
+    turnover: float = float("nan")
+    min_year_ic: float = float("nan")
+    objective_score: float = float("-inf")
 
     @property
     def sign_consistent(self) -> bool:
@@ -50,9 +43,7 @@ class Candidate:
 
     @property
     def robust_score(self) -> float:
-        # reward the WORSE of the two in-sample windows; penalize complexity & hidden knobs
-        base = min(self.fit_train, self.fit_valid)
-        return base - 0.03 * self.n_params - 0.15 * self.n_undeclared
+        return self.objective_score
 
 
 def evaluate_candidates(candidates: list[tuple[str, str, dict]], panel: pd.DataFrame,
@@ -68,12 +59,18 @@ def evaluate_candidates(candidates: list[tuple[str, str, dict]], panel: pd.DataF
         mt = evaluate_factor(scored, panel, primary_lag=primary_lag, split="train")
         mv = evaluate_factor(scored, panel, primary_lag=primary_lag, split="valid")
         mte = evaluate_factor(scored, panel, primary_lag=primary_lag, split="test")
-        npar, nund = _complexity(code, params)
+        obj = evaluate_objective(scored, panel, code=code, params=params,
+                                 objective="portfolio_v3", primary_lag=primary_lag,
+                                 split="valid")
+        npar, nund = complexity_counts(code, params)
         out.append(Candidate(
             name=name, code=code, params=params,
             ic_train=mt.headline()["IC"], ic_valid=mv.headline()["IC"],
             fit_train=mt.fitness, fit_valid=mv.fitness, ic_test=mte.headline()["IC"],
-            n_params=npar, n_undeclared=nund))
+            n_params=npar, n_undeclared=nund,
+            turnover=obj.components.get("turnover", float("nan")),
+            min_year_ic=obj.components.get("min_year_ic", float("nan")),
+            objective_score=obj.score))
     return out
 
 

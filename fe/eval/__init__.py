@@ -6,3 +6,10 @@ from .metrics import (  # noqa: F401
     FactorMetrics,
     fitness_from_components,
 )
+from .objectives import (  # noqa: F401
+    ObjectiveResult,
+    evaluate_objective,
+    complexity_counts,
+    rank_turnover,
+    min_yearly_ic,
+)

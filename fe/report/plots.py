@@ -23,7 +23,7 @@ def convergence_plot(history, out: Path, title="Evolution: best objective vs ite
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     ax.plot(it, rw, color=C_FE, lw=2)
     ax.set_xlabel("evolution iteration")
-    ax.set_ylabel("best combined_score (valid)")
+    ax.set_ylabel("best objective reward")
     ax.set_title(title)
     ax.grid(alpha=0.3)
     fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
@@ -38,7 +38,7 @@ def bayes_ablation_plot(abl, out: Path):
         if h:
             ax.plot([x[0] for x in h], [x[1] for x in h], color=color, lw=2, label=label)
     ax.set_xlabel("evolution iteration")
-    ax.set_ylabel("best combined_score")
+    ax.set_ylabel("best objective reward")
     ax.set_title("Ablation: Bayesian micro-search (paper Fig. 5)")
     ax.legend(fontsize=8); ax.grid(alpha=0.3)
     fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
