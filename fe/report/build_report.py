@@ -5,7 +5,9 @@ Figures are embedded as base64 so the .html is shareable as a single file.
 from __future__ import annotations
 
 import base64
+import html as html_lib
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -41,6 +43,119 @@ def _table(headers, rows, cls="t"):
     for r in rows:
         body += "<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>"
     return f'<table class="{cls}"><thead><tr>{h}</tr></thead><tbody>{body}</tbody></table>'
+
+
+def _inline_md(text: str) -> str:
+    text = html_lib.escape(text)
+    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", text)
+    return text
+
+
+def _is_table_sep(line: str) -> bool:
+    chars = set(line.strip().replace("|", "").replace(" ", ""))
+    return bool(chars) and chars <= {"-", ":"}
+
+
+def _md_table(rows):
+    parsed = []
+    for row in rows:
+        cells = [c.strip() for c in row.strip().strip("|").split("|")]
+        parsed.append([_inline_md(c) for c in cells])
+    if len(parsed) > 1 and _is_table_sep(rows[1]):
+        return _table(parsed[0], parsed[2:], cls="t plan-table")
+    return _table(parsed[0], parsed[1:], cls="t plan-table")
+
+
+def _basic_markdown(md: str) -> str:
+    """Small Markdown renderer for embedding REPRODUCTION_PLAN.md without adding
+    a runtime dependency. It supports the subset used by the plan file."""
+    out, para, list_type = [], [], None
+    lines = md.splitlines()
+
+    def flush_para():
+        if para:
+            out.append("<p>" + _inline_md(" ".join(p.strip() for p in para)) + "</p>")
+            para.clear()
+
+    def flush_list():
+        nonlocal list_type
+        if list_type:
+            out.append(f"</{list_type}>")
+            list_type = None
+
+    def start_list(kind: str):
+        nonlocal list_type
+        if list_type != kind:
+            flush_para()
+            flush_list()
+            out.append(f"<{kind}>")
+            list_type = kind
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
+        stripped = line.strip()
+        if not stripped:
+            flush_para()
+            flush_list()
+            i += 1
+            continue
+        if stripped == "---":
+            flush_para()
+            flush_list()
+            i += 1
+            continue
+        if stripped.startswith("|"):
+            flush_para()
+            flush_list()
+            table_lines = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                table_lines.append(lines[i].rstrip())
+                i += 1
+            out.append(_md_table(table_lines))
+            continue
+        if stripped.startswith("# "):
+            flush_para()
+            flush_list()
+            out.append(f"<h3>{_inline_md(stripped[2:])}</h3>")
+        elif stripped.startswith("## "):
+            flush_para()
+            flush_list()
+            out.append(f"<h3>{_inline_md(stripped[3:])}</h3>")
+        elif stripped.startswith("### "):
+            flush_para()
+            flush_list()
+            out.append(f"<h4>{_inline_md(stripped[4:])}</h4>")
+        elif stripped.startswith("- [x] "):
+            start_list("ul")
+            out.append(f"<li><b>[x]</b> {_inline_md(stripped[6:])}</li>")
+        elif stripped.startswith("- [ ] "):
+            start_list("ul")
+            out.append(f"<li>[ ] {_inline_md(stripped[6:])}</li>")
+        elif stripped.startswith("- "):
+            start_list("ul")
+            out.append(f"<li>{_inline_md(stripped[2:])}</li>")
+        else:
+            m = re.match(r"^(\d+)\.\s+(.*)$", stripped)
+            if m:
+                start_list("ol")
+                out.append(f"<li>{_inline_md(m.group(2))}</li>")
+            else:
+                flush_list()
+                para.append(line)
+        i += 1
+    flush_para()
+    flush_list()
+    return "\n".join(out)
+
+
+def _plan_appendix() -> str:
+    plan_path = Path(__file__).resolve().parents[2] / "REPRODUCTION_PLAN.md"
+    if not plan_path.exists():
+        return '<p class="small">REPRODUCTION_PLAN.md was not found when this report was built.</p>'
+    return _basic_markdown(plan_path.read_text())
 
 
 def _param_contract(evo):
@@ -114,6 +229,10 @@ th{background:#f2f4f8;text-align:center}td:first-child,th:first-child{text-align
 .fig{margin:14px 0;text-align:center}
 code{background:#f3f3f3;padding:1px 5px;border-radius:4px;font-size:12px}
 .small{font-size:12px;color:#777}
+.plan-appendix{background:#fbfcff;border:1px solid #e3e8f0;border-radius:8px;padding:14px 16px;margin-top:12px}
+.plan-appendix h3{font-size:17px;margin-top:22px}.plan-appendix h4{font-size:14px;margin:18px 0 6px;color:#444}
+.plan-appendix p,.plan-appendix li{font-size:13px}.plan-appendix ul,.plan-appendix ol{padding-left:22px}
+.plan-table{font-size:12px}.plan-table td,.plan-table th{text-align:left;vertical-align:top}
 """
 
 
@@ -135,6 +254,7 @@ def build_html(outputs: Path = None) -> Path:
     v3_456 = {}
     if (outputs / "v3_4to6.json").exists():
         v3_456 = json.loads((outputs / "v3_4to6.json").read_text())
+    plan_appendix = _plan_appendix()
 
     # ---- figures ----
     f_conv = plots.convergence_plot(evo.get("history", []), figs / "convergence.png")
@@ -697,6 +817,14 @@ rank-inclusive fitness (Eq.5) is the robust choice.</li>
 <p>The run shows the bottleneck is <b>selection/integration</b>, not LLM connectivity.
 {"<b>All six items are now demonstrated on the existing run</b> (Results 4–6): robust selection removed the CSI300 degradation (#1–#2), orthogonalization beats the baseline on CSI500 (#3), and the portfolio objective / prompt-parser contract / plateau stop are exercised in Result 6 (#4–#6) — no LLM re-run needed." if v3_456_html else "<b>V3 status artifacts are incomplete for this build.</b> Run scripts/06_robust_elite.py, scripts/07_orthogonal_elite.py, and scripts/08_v3_4to6.py before rebuilding the report."}</p>
 {v3_html}
+
+<h2>Reproduction plan status</h2>
+<p>The current reproduction plan is embedded below so the report carries both the empirical results and the
+phase-by-phase execution map. This appendix is generated from <code>REPRODUCTION_PLAN.md</code> at report
+build time.</p>
+<div class="plan-appendix">
+{plan_appendix}
+</div>
 
 <h2>Conclusion</h2>
 <p>On {DATASRC}, FactorEngine's <b>machinery</b> reproduces faithfully — program-level macro mutation separated
