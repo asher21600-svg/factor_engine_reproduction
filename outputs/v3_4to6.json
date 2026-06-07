@@ -1,0 +1,121 @@
+{
+  "param_contract": {
+    "hidden_knobs": [
+      "smooth_window",
+      "turnover_decay",
+      "w4",
+      "w_turnover"
+    ],
+    "before": {
+      "valid_fit": 0.6362618882424019,
+      "test_ic": -0.0011627007424720778
+    },
+    "after": {
+      "valid_fit": 0.6400915005662586,
+      "test_ic": -0.0014838648798692002,
+      "tuned": {
+        "w4": 0.1398675759038568,
+        "w_turnover": 0.29087047834227914,
+        "smooth_window": 3,
+        "turnover_decay": 0.5677057798344178
+      }
+    }
+  },
+  "portfolio": {
+    "ic_only_top": [
+      "kimi_elite_0",
+      "kimi_elite_4",
+      "kimi_elite_1"
+    ],
+    "portfolio_top": [
+      "claude_gk_lowvol",
+      "kimi_elite_4",
+      "kimi_elite_3"
+    ],
+    "candidates": {
+      "seed": {
+        "ic": 0.0048479961257714334,
+        "turnover": 0.9956409410760079,
+        "min_year_ic": -0.002322514879640316,
+        "score": -0.3945696377444519
+      },
+      "kimi_elite_0": {
+        "ic": 0.05755936723695561,
+        "turnover": 0.05468482532872776,
+        "min_year_ic": 0.012341929681584875,
+        "score": 0.041856401946256935
+      },
+      "kimi_elite_1": {
+        "ic": 0.05741296805160572,
+        "turnover": 0.052741593192259684,
+        "min_year_ic": 0.012982546923088086,
+        "score": 0.04280760423624588
+      },
+      "kimi_elite_2": {
+        "ic": 0.056401912407574833,
+        "turnover": 0.056126634883208126,
+        "min_year_ic": 0.009172336982680945,
+        "score": 0.03853742694563205
+      },
+      "kimi_elite_3": {
+        "ic": 0.05704223330888154,
+        "turnover": 0.049067634435614016,
+        "min_year_ic": 0.01355586682151918,
+        "score": 0.04419311294539553
+      },
+      "kimi_elite_4": {
+        "ic": 0.05750399568084363,
+        "turnover": 0.05411653565754848,
+        "min_year_ic": 0.02093488498838203,
+        "score": 0.046324823912015256
+      },
+      "claude_amihud_reversal": {
+        "ic": 0.02951806185730545,
+        "turnover": 0.14096904521878373,
+        "min_year_ic": 0.017171438292233054,
+        "score": -0.018283837084091516
+      },
+      "claude_overnight_intraday": {
+        "ic": 0.03313946769083463,
+        "turnover": 0.10036349712605452,
+        "min_year_ic": 0.013337133348173923,
+        "score": -0.00033736448550021614
+      },
+      "claude_volscaled_momentum": {
+        "ic": -0.041570200073406456,
+        "turnover": 0.07356662228424238,
+        "min_year_ic": -0.029926877813143845,
+        "score": -0.08596028789367532
+      },
+      "claude_pv_divergence": {
+        "ic": 0.019312004685946384,
+        "turnover": 0.6027576974536415,
+        "min_year_ic": 0.007083886791112287,
+        "score": -0.21824913089995407
+      },
+      "claude_gk_lowvol": {
+        "ic": 0.04349102767799078,
+        "turnover": 0.012285864846883432,
+        "min_year_ic": 0.024108314265589754,
+        "score": 0.050630838872032284
+      }
+    }
+  },
+  "plateau": {
+    "plateau_iter": 99,
+    "n_iters": 300,
+    "elapsed_s": 52491.5,
+    "scenarios": {
+      "30": {
+        "stop_iter": 129,
+        "saved_s": 29920.155,
+        "saved_frac": 0.57
+      },
+      "50": {
+        "stop_iter": 149,
+        "saved_s": 26420.721666666665,
+        "saved_frac": 0.5033333333333333
+      }
+    }
+  }
+}

@@ -1,0 +1,1152 @@
+{
+  "panel": "csi300",
+  "config": {
+    "iterations": 24,
+    "islands": 2,
+    "trials": 12,
+    "use_llm": true
+  },
+  "elapsed_s": 1186.8,
+  "n_evals": 290,
+  "n_llm": 0,
+  "seed_reward": 0.10401,
+  "seed_fitness": 0.07672,
+  "best_reward": 0.4623,
+  "best_fitness": 0.50031,
+  "best_transforms": [
+    "ewm",
+    "midprice",
+    "ranknorm",
+    "retune",
+    "turnover"
+  ],
+  "best_params": {
+    "w1": 0.4566,
+    "w2": 0.9972,
+    "w3": 0.0077,
+    "smoothing_window": 4
+  },
+  "best_idea": "re-tune params",
+  "best_code": "\ndef factor(pricing_data, parameters):\n    w1 = parameters.get(\"w1\", 0.25)\n    w2 = parameters.get(\"w2\", 0.25)\n    w3 = parameters.get(\"w3\", 0.50)\n    EPSILON = parameters.get(\"epsilon\", 1e-9)\n    smoothing_window = parameters.get(\"smoothing_window\", 5)\n\n    if isinstance(pricing_data, pd.DataFrame):\n        df_pl = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df_pl = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n\n    df_pl = df_pl.select(\n        ['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']\n    ).with_columns([\n        pl.col(\"datetime\").cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ])\n\n    daily_range_expr = pl.col('high') - pl.col('low')\n    sf1_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('close') - (pl.col('high') + pl.col('low')) / 2.0) / (daily_range_expr + EPSILON)\n    sf2_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('high') - pl.col('open')) / (daily_range_expr + EPSILON)\n    sf3_expr = (pl.col('volume') * pl.col('close')) * (pl.min_horizontal('open', 'close') - pl.col('low')) / (daily_range_expr + EPSILON)\n\n    df_factor = df_pl.with_columns(\n        z1=(sf1_expr.rank(method='average').over('datetime') / (sf1_expr.count().over('datetime') + 1) - 0.5),\n        z2=(sf2_expr.rank(method='average').over('datetime') / (sf2_expr.count().over('datetime') + 1) - 0.5),\n        z3=(sf3_expr.rank(method='average').over('datetime') / (sf3_expr.count().over('datetime') + 1) - 0.5),\n    ).with_columns(\n        (w1 * pl.col('z1') + w2 * pl.col('z2') + w3 * pl.col('z3')).alias('raw_f')\n    )\n\n    df_factor = df_factor.sort(['instrument','datetime']).with_columns(\n        pl.col('raw_f').ewm_mean(span=smoothing_window, min_periods=1).over('instrument').alias('smoothed_f'))\n    df_factor = df_factor.with_columns(\n        ((pl.col('smoothed_f') - pl.col('smoothed_f').mean().over('datetime')) /\n         (pl.col('smoothed_f').std(ddof=0).over('datetime') + EPSILON)).alias('Factor'))\n    df_tf = df_factor.select(['instrument', 'datetime', 'Factor'])\n    df_tf = df_tf.filter(pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    df_tf = df_tf.with_columns(pl.col(\"datetime\").cast(pl.Date).alias(\"datetime\"))\n    return df_tf\n",
+  "elite": [
+    {
+      "code": "\ndef factor(pricing_data, parameters):\n    w1 = parameters.get(\"w1\", 0.25)\n    w2 = parameters.get(\"w2\", 0.25)\n    w3 = parameters.get(\"w3\", 0.50)\n    EPSILON = parameters.get(\"epsilon\", 1e-9)\n    smoothing_window = parameters.get(\"smoothing_window\", 5)\n\n    if isinstance(pricing_data, pd.DataFrame):\n        df_pl = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df_pl = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n\n    df_pl = df_pl.select(\n        ['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']\n    ).with_columns([\n        pl.col(\"datetime\").cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ])\n\n    daily_range_expr = pl.col('high') - pl.col('low')\n    sf1_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('close') - (pl.col('high') + pl.col('low')) / 2.0) / (daily_range_expr + EPSILON)\n    sf2_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('high') - pl.col('open')) / (daily_range_expr + EPSILON)\n    sf3_expr = (pl.col('volume') * pl.col('close')) * (pl.min_horizontal('open', 'close') - pl.col('low')) / (daily_range_expr + EPSILON)\n\n    df_factor = df_pl.with_columns(\n        z1=(sf1_expr.rank(method='average').over('datetime') / (sf1_expr.count().over('datetime') + 1) - 0.5),\n        z2=(sf2_expr.rank(method='average').over('datetime') / (sf2_expr.count().over('datetime') + 1) - 0.5),\n        z3=(sf3_expr.rank(method='average').over('datetime') / (sf3_expr.count().over('datetime') + 1) - 0.5),\n    ).with_columns(\n        (w1 * pl.col('z1') + w2 * pl.col('z2') + w3 * pl.col('z3')).alias('raw_f')\n    )\n\n    df_factor = df_factor.sort(['instrument','datetime']).with_columns(\n        pl.col('raw_f').ewm_mean(span=smoothing_window, min_periods=1).over('instrument').alias('smoothed_f'))\n    df_factor = df_factor.with_columns(\n        ((pl.col('smoothed_f') - pl.col('smoothed_f').mean().over('datetime')) /\n         (pl.col('smoothed_f').std(ddof=0).over('datetime') + EPSILON)).alias('Factor'))\n    df_tf = df_factor.select(['instrument', 'datetime', 'Factor'])\n    df_tf = df_tf.filter(pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    df_tf = df_tf.with_columns(pl.col(\"datetime\").cast(pl.Date).alias(\"datetime\"))\n    return df_tf\n",
+      "params": {
+        "w1": 0.2306,
+        "w2": 0.8111,
+        "w3": 0.0269,
+        "smoothing_window": 3
+      },
+      "fitness": 0.50243,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ]
+    },
+    {
+      "code": "\ndef factor(pricing_data, parameters):\n    w1 = parameters.get(\"w1\", 0.25)\n    w2 = parameters.get(\"w2\", 0.25)\n    w3 = parameters.get(\"w3\", 0.50)\n    EPSILON = parameters.get(\"epsilon\", 1e-9)\n    smoothing_window = parameters.get(\"smoothing_window\", 5)\n\n    if isinstance(pricing_data, pd.DataFrame):\n        df_pl = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df_pl = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n\n    df_pl = df_pl.select(\n        ['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']\n    ).with_columns([\n        pl.col(\"datetime\").cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ])\n\n    daily_range_expr = pl.col('high') - pl.col('low')\n    sf1_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('close') - pl.col('low')) / (daily_range_expr + EPSILON)\n    sf2_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('high') - pl.col('open')) / (daily_range_expr + EPSILON)\n    sf3_expr = (pl.col('volume') * pl.col('close')) * (pl.min_horizontal('open', 'close') - pl.col('low')) / (daily_range_expr + EPSILON)\n\n    df_factor = df_pl.with_columns(\n        z1=(sf1_expr.rank(method='average').over('datetime') / (sf1_expr.count().over('datetime') + 1) - 0.5),\n        z2=(sf2_expr.rank(method='average').over('datetime') / (sf2_expr.count().over('datetime') + 1) - 0.5),\n        z3=(sf3_expr.rank(method='average').over('datetime') / (sf3_expr.count().over('datetime') + 1) - 0.5),\n    ).with_columns(\n        (w1 * pl.col('z1') + w2 * pl.col('z2') + w3 * pl.col('z3')).alias('raw_f')\n    )\n\n    df_factor = df_factor.sort(['instrument','datetime']).with_columns(\n        pl.col('raw_f').ewm_mean(span=smoothing_window, min_periods=1).over('instrument').alias('smoothed_f'))\n    df_factor = df_factor.with_columns(\n        ((pl.col('smoothed_f') - pl.col('smoothed_f').mean().over('datetime')) /\n         (pl.col('smoothed_f').std(ddof=0).over('datetime') + EPSILON)).alias('Factor'))\n    df_tf = df_factor.select(['instrument', 'datetime', 'Factor'])\n    df_tf = df_tf.filter(pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    df_tf = df_tf.with_columns(pl.col(\"datetime\").cast(pl.Date).alias(\"datetime\"))\n    return df_tf\n",
+      "params": {
+        "w1": 0.0205,
+        "w2": 0.511,
+        "w3": 0.0887,
+        "smoothing_window": 7
+      },
+      "fitness": 0.47454,
+      "transforms": [
+        "ewm",
+        "ranknorm",
+        "turnover"
+      ]
+    },
+    {
+      "code": "\ndef factor(pricing_data, parameters):\n    w1 = parameters.get(\"w1\", 0.25)\n    w2 = parameters.get(\"w2\", 0.25)\n    w3 = parameters.get(\"w3\", 0.50)\n    EPSILON = parameters.get(\"epsilon\", 1e-9)\n\n    if isinstance(pricing_data, pd.DataFrame):\n        df_pl = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df_pl = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n\n    df_pl = df_pl.select(\n        ['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']\n    ).with_columns([\n        pl.col(\"datetime\").cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ])\n\n    daily_range_expr = pl.col('high') - pl.col('low')\n    sf1_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('close') - pl.col('low')) / (daily_range_expr + EPSILON)\n    sf2_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('high') - pl.col('open')) / (daily_range_expr + EPSILON)\n    sf3_expr = (pl.col('volume') * pl.col('close')) * (pl.min_horizontal('open', 'close') - pl.col('low')) / (daily_range_expr + EPSILON)\n\n    df_factor = df_pl.with_columns(\n        z1=(sf1_expr.rank(method='average').over('datetime') / (sf1_expr.count().over('datetime') + 1) - 0.5),\n        z2=(sf2_expr.rank(method='average').over('datetime') / (sf2_expr.count().over('datetime') + 1) - 0.5),\n        z3=(sf3_expr.rank(method='average').over('datetime') / (sf3_expr.count().over('datetime') + 1) - 0.5),\n    ).with_columns(\n        (w1 * pl.col('z1') + w2 * pl.col('z2') + w3 * pl.col('z3')).alias('Factor')\n    )\n\n    df_tf = df_factor.select(['instrument', 'datetime', 'Factor'])\n    df_tf = df_tf.filter(pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    df_tf = df_tf.with_columns(pl.col(\"datetime\").cast(pl.Date).alias(\"datetime\"))\n    return df_tf\n",
+      "params": {
+        "w1": 0.5516,
+        "w2": 0.5265,
+        "w3": 0.0551
+      },
+      "fitness": 0.47152,
+      "transforms": [
+        "ranknorm",
+        "turnover"
+      ]
+    },
+    {
+      "code": "\ndef factor(pricing_data, parameters):\n    w1 = parameters.get(\"w1\", 0.25)\n    w2 = parameters.get(\"w2\", 0.25)\n    w3 = parameters.get(\"w3\", 0.50)\n    EPSILON = parameters.get(\"epsilon\", 1e-9)\n\n    if isinstance(pricing_data, pd.DataFrame):\n        df_pl = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df_pl = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n\n    df_pl = df_pl.select(\n        ['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']\n    ).with_columns([\n        pl.col(\"datetime\").cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ])\n\n    daily_range_expr = pl.col('high') - pl.col('low')\n    sf1_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('close') - (pl.col('high') + pl.col('low')) / 2.0) / (daily_range_expr + EPSILON)\n    sf2_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('high') - pl.col('open')) / (daily_range_expr + EPSILON)\n    sf3_expr = (pl.col('volume') * pl.col('close')) * (pl.min_horizontal('open', 'close') - pl.col('low')) / (daily_range_expr + EPSILON)\n\n    df_factor = df_pl.with_columns(\n        z1=(sf1_expr.rank(method='average').over('datetime') / (sf1_expr.count().over('datetime') + 1) - 0.5),\n        z2=(sf2_expr.rank(method='average').over('datetime') / (sf2_expr.count().over('datetime') + 1) - 0.5),\n        z3=(sf3_expr.rank(method='average').over('datetime') / (sf3_expr.count().over('datetime') + 1) - 0.5),\n    ).with_columns(\n        (w1 * pl.col('z1') + w2 * pl.col('z2') + w3 * pl.col('z3')).alias('Factor')\n    )\n\n    df_tf = df_factor.select(['instrument', 'datetime', 'Factor'])\n    df_tf = df_tf.filter(pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    df_tf = df_tf.with_columns(pl.col(\"datetime\").cast(pl.Date).alias(\"datetime\"))\n    return df_tf\n",
+      "params": {
+        "w1": 0.1004,
+        "w2": 0.8598,
+        "w3": 0.0079
+      },
+      "fitness": 0.46112,
+      "transforms": [
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ]
+    },
+    {
+      "code": "\ndef factor(pricing_data, parameters):\n    w1 = parameters.get(\"w1\", 0.25)\n    w2 = parameters.get(\"w2\", 0.25)\n    w3 = parameters.get(\"w3\", 0.50)\n    EPSILON = parameters.get(\"epsilon\", 1e-9)\n\n    if isinstance(pricing_data, pd.DataFrame):\n        df_pl = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df_pl = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n\n    df_pl = df_pl.select(\n        ['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']\n    ).with_columns([\n        pl.col(\"datetime\").cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ])\n\n    daily_range_expr = pl.col('high') - pl.col('low')\n    sf1_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('close') - pl.col('low')) / (daily_range_expr + EPSILON)\n    sf2_expr = -(pl.col('volume') * pl.col('close')) * (pl.col('high') - pl.col('open')) / (daily_range_expr + EPSILON)\n    sf3_expr = (pl.col('volume') * pl.col('close')) * (pl.min_horizontal('open', 'close') - pl.col('low')) / (daily_range_expr + EPSILON)\n\n    df_factor = df_pl.with_columns(\n        z1=(sf1_expr - sf1_expr.mean().over('datetime')) / (sf1_expr.std(ddof=0).over('datetime') + EPSILON),\n        z2=(sf2_expr - sf2_expr.mean().over('datetime')) / (sf2_expr.std(ddof=0).over('datetime') + EPSILON),\n        z3=(sf3_expr - sf3_expr.mean().over('datetime')) / (sf3_expr.std(ddof=0).over('datetime') + EPSILON),\n    ).with_columns(\n        (w1 * pl.col('z1') + w2 * pl.col('z2') + w3 * pl.col('z3')).alias('Factor')\n    )\n\n    df_tf = df_factor.select(['instrument', 'datetime', 'Factor'])\n    df_tf = df_tf.filter(pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    df_tf = df_tf.with_columns(pl.col(\"datetime\").cast(pl.Date).alias(\"datetime\"))\n    return df_tf\n",
+      "params": {
+        "w1": 0.4533,
+        "w2": 0.9559,
+        "w3": 0.0007
+      },
+      "fitness": 0.45205,
+      "transforms": [
+        "turnover"
+      ]
+    }
+  ],
+  "history": [
+    [
+      1,
+      0.41488698757026476
+    ],
+    [
+      2,
+      0.41488698757026476
+    ],
+    [
+      3,
+      0.4211034221854767
+    ],
+    [
+      4,
+      0.4211034221854767
+    ],
+    [
+      5,
+      0.4211034221854767
+    ],
+    [
+      6,
+      0.4211034221854767
+    ],
+    [
+      7,
+      0.44446980502529687
+    ],
+    [
+      8,
+      0.44446980502529687
+    ],
+    [
+      9,
+      0.44446980502529687
+    ],
+    [
+      10,
+      0.44446980502529687
+    ],
+    [
+      11,
+      0.44446980502529687
+    ],
+    [
+      12,
+      0.44446980502529687
+    ],
+    [
+      13,
+      0.44446980502529687
+    ],
+    [
+      14,
+      0.44446980502529687
+    ],
+    [
+      15,
+      0.44446980502529687
+    ],
+    [
+      16,
+      0.44446980502529687
+    ],
+    [
+      17,
+      0.44446980502529687
+    ],
+    [
+      18,
+      0.44446980502529687
+    ],
+    [
+      19,
+      0.46058430221551316
+    ],
+    [
+      20,
+      0.46058430221551316
+    ],
+    [
+      21,
+      0.46058430221551316
+    ],
+    [
+      22,
+      0.46058430221551316
+    ],
+    [
+      23,
+      0.46230497145492144
+    ],
+    [
+      24,
+      0.46230497145492144
+    ]
+  ],
+  "pool": [
+    {
+      "id": 0,
+      "parent": null,
+      "island": 0,
+      "depth": 0,
+      "transforms": [],
+      "reward": 0.10401,
+      "fitness": 0.07672,
+      "idea": "initial seed program",
+      "change": "",
+      "params": {},
+      "valid": true
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "turnover"
+      ],
+      "reward": 0.41489,
+      "fitness": 0.45205,
+      "idea": "Weight each intraday pressure component by turnover (volume x close) instead of raw share volume \u2014 capital-weighted signal.",
+      "change": "volume -> turnover",
+      "params": {
+        "w1": 0.4533,
+        "w2": 0.9559,
+        "w3": 0.0007
+      },
+      "valid": true
+    },
+    {
+      "id": 4,
+      "parent": 2,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.4211,
+      "fitness": 0.47152,
+      "idea": "Replace cross-sectional z-scoring of each component with rank-normalization \u2014 robust to fat-tailed turnover outliers.",
+      "change": "z-score -> rank-norm",
+      "params": {
+        "w1": 0.5516,
+        "w2": 0.5265,
+        "w3": 0.0551
+      },
+      "valid": true
+    },
+    {
+      "id": 6,
+      "parent": 4,
+      "island": 0,
+      "depth": 3,
+      "transforms": [
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.41936,
+      "fitness": 0.45577,
+      "idea": "Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "close-low -> close-mid",
+      "params": {
+        "w1": 0.0064,
+        "w2": 0.7618,
+        "w3": 0.0347
+      },
+      "valid": true
+    },
+    {
+      "id": 8,
+      "parent": 6,
+      "island": 0,
+      "depth": 4,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44447,
+      "fitness": 0.48455,
+      "idea": "Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "+ EWM smoothing",
+      "params": {
+        "w1": 0.2098,
+        "w2": 0.7286,
+        "w3": 0.0335,
+        "smoothing_window": 8
+      },
+      "valid": true
+    },
+    {
+      "id": 9,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "turnover"
+      ],
+      "reward": 0.41086,
+      "fitness": 0.44148,
+      "idea": "[migrant from island 1] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.6757,
+        "w2": 0.9774,
+        "w3": 0.0096,
+        "smoothing_window": 9
+      },
+      "valid": true
+    },
+    {
+      "id": 10,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "midprice",
+        "turnover"
+      ],
+      "reward": 0.33495,
+      "fitness": 0.36854,
+      "idea": "[migrant from island 1] Weight each intraday pressure component by turnover (volume x close) instead of raw share volume \u2014 capital-weighted signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.7119,
+        "w2": 0.9975,
+        "w3": 0.0008
+      },
+      "valid": true
+    },
+    {
+      "id": 11,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "midprice"
+      ],
+      "reward": 0.33329,
+      "fitness": 0.34277,
+      "idea": "[migrant from island 1] Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "migration",
+      "params": {
+        "w1": 0.0366,
+        "w2": 0.7195,
+        "w3": 0.014
+      },
+      "valid": true
+    },
+    {
+      "id": 16,
+      "parent": 9,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44261,
+      "fitness": 0.48529,
+      "idea": "Replace cross-sectional z-scoring of each component with rank-normalization \u2014 robust to fat-tailed turnover outliers.",
+      "change": "z-score -> rank-norm",
+      "params": {
+        "w1": 0.2895,
+        "w2": 0.6091,
+        "w3": 0.0092,
+        "smoothing_window": 2
+      },
+      "valid": true
+    },
+    {
+      "id": 18,
+      "parent": 10,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.39938,
+      "fitness": 0.43948,
+      "idea": "Replace cross-sectional z-scoring of each component with rank-normalization \u2014 robust to fat-tailed turnover outliers.",
+      "change": "z-score -> rank-norm",
+      "params": {
+        "w1": 0.4152,
+        "w2": 0.986,
+        "w3": 0.0415
+      },
+      "valid": true
+    },
+    {
+      "id": 20,
+      "parent": 11,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice"
+      ],
+      "reward": 0.3341,
+      "fitness": 0.35641,
+      "idea": "Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "+ EWM smoothing",
+      "params": {
+        "w1": 0.2249,
+        "w2": 0.3904,
+        "w3": 0.0192,
+        "smoothing_window": 11
+      },
+      "valid": true
+    },
+    {
+      "id": 22,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44447,
+      "fitness": 0.48455,
+      "idea": "[migrant from island 1] [migrant from island 0] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2098,
+        "w2": 0.7286,
+        "w3": 0.0335,
+        "smoothing_window": 8
+      },
+      "valid": true
+    },
+    {
+      "id": 23,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.43356,
+      "fitness": 0.46899,
+      "idea": "[migrant from island 1] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.4615,
+        "w2": 0.598,
+        "w3": 0.0048,
+        "smoothing_window": 13
+      },
+      "valid": true
+    },
+    {
+      "id": 24,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.42217,
+      "fitness": 0.46112,
+      "idea": "[migrant from island 1] Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "migration",
+      "params": {
+        "w1": 0.1004,
+        "w2": 0.8598,
+        "w3": 0.0079
+      },
+      "valid": true
+    },
+    {
+      "id": 28,
+      "parent": 24,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.41624,
+      "fitness": 0.45704,
+      "idea": "Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "+ EWM smoothing",
+      "params": {
+        "w1": 0.5406,
+        "w2": 0.9799,
+        "w3": 0.0277,
+        "smoothing_window": 19
+      },
+      "valid": true
+    },
+    {
+      "id": 30,
+      "parent": 9,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.42515,
+      "fitness": 0.46807,
+      "idea": "Replace cross-sectional z-scoring of each component with rank-normalization \u2014 robust to fat-tailed turnover outliers.",
+      "change": "z-score -> rank-norm",
+      "params": {
+        "w1": 0.1513,
+        "w2": 0.6781,
+        "w3": 0.022,
+        "smoothing_window": 13
+      },
+      "valid": true
+    },
+    {
+      "id": 32,
+      "parent": 24,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.46058,
+      "fitness": 0.50243,
+      "idea": "Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "+ EWM smoothing",
+      "params": {
+        "w1": 0.2306,
+        "w2": 0.8111,
+        "w3": 0.0269,
+        "smoothing_window": 3
+      },
+      "valid": true
+    },
+    {
+      "id": 34,
+      "parent": 10,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "turnover"
+      ],
+      "reward": 0.40459,
+      "fitness": 0.42523,
+      "idea": "Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "+ EWM smoothing",
+      "params": {
+        "w1": 0.5521,
+        "w2": 0.874,
+        "w3": 0.2757,
+        "smoothing_window": 5
+      },
+      "valid": true
+    },
+    {
+      "id": 35,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44447,
+      "fitness": 0.48455,
+      "idea": "[migrant from island 1] [migrant from island 0] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2098,
+        "w2": 0.7286,
+        "w3": 0.0335,
+        "smoothing_window": 8
+      },
+      "valid": true
+    },
+    {
+      "id": 36,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44447,
+      "fitness": 0.48455,
+      "idea": "[migrant from island 1] [migrant from island 0] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2098,
+        "w2": 0.7286,
+        "w3": 0.0335,
+        "smoothing_window": 8
+      },
+      "valid": true
+    },
+    {
+      "id": 37,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44261,
+      "fitness": 0.48529,
+      "idea": "[migrant from island 1] [migrant from island 0] Replace cross-sectional z-scoring of each component with rank-normalization \u2014 robust to fat-tailed turnover outliers.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2895,
+        "w2": 0.6091,
+        "w3": 0.0092,
+        "smoothing_window": 2
+      },
+      "valid": true
+    },
+    {
+      "id": 42,
+      "parent": 32,
+      "island": 0,
+      "depth": 3,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "retune",
+        "turnover"
+      ],
+      "reward": 0.4623,
+      "fitness": 0.50031,
+      "idea": "re-tune params",
+      "change": "micro re-tune",
+      "params": {
+        "w1": 0.4566,
+        "w2": 0.9972,
+        "w3": 0.0077,
+        "smoothing_window": 4
+      },
+      "valid": true
+    },
+    {
+      "id": 1,
+      "parent": null,
+      "island": 1,
+      "depth": 0,
+      "transforms": [],
+      "reward": 0.10401,
+      "fitness": 0.07672,
+      "idea": "initial seed program",
+      "change": "",
+      "params": {},
+      "valid": true
+    },
+    {
+      "id": 3,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "midprice"
+      ],
+      "reward": 0.33329,
+      "fitness": 0.34277,
+      "idea": "Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "close-low -> close-mid",
+      "params": {
+        "w1": 0.0366,
+        "w2": 0.7195,
+        "w3": 0.014
+      },
+      "valid": true
+    },
+    {
+      "id": 5,
+      "parent": 3,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "midprice",
+        "turnover"
+      ],
+      "reward": 0.33495,
+      "fitness": 0.36854,
+      "idea": "Weight each intraday pressure component by turnover (volume x close) instead of raw share volume \u2014 capital-weighted signal.",
+      "change": "volume -> turnover",
+      "params": {
+        "w1": 0.7119,
+        "w2": 0.9975,
+        "w3": 0.0008
+      },
+      "valid": true
+    },
+    {
+      "id": 7,
+      "parent": 5,
+      "island": 1,
+      "depth": 3,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "turnover"
+      ],
+      "reward": 0.41086,
+      "fitness": 0.44148,
+      "idea": "Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "+ EWM smoothing",
+      "params": {
+        "w1": 0.6757,
+        "w2": 0.9774,
+        "w3": 0.0096,
+        "smoothing_window": 9
+      },
+      "valid": true
+    },
+    {
+      "id": 12,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44447,
+      "fitness": 0.48455,
+      "idea": "[migrant from island 0] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2098,
+        "w2": 0.7286,
+        "w3": 0.0335,
+        "smoothing_window": 8
+      },
+      "valid": true
+    },
+    {
+      "id": 13,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.4211,
+      "fitness": 0.47152,
+      "idea": "[migrant from island 0] Replace cross-sectional z-scoring of each component with rank-normalization \u2014 robust to fat-tailed turnover outliers.",
+      "change": "migration",
+      "params": {
+        "w1": 0.5516,
+        "w2": 0.5265,
+        "w3": 0.0551
+      },
+      "valid": true
+    },
+    {
+      "id": 14,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.41936,
+      "fitness": 0.45577,
+      "idea": "[migrant from island 0] Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "migration",
+      "params": {
+        "w1": 0.0064,
+        "w2": 0.7618,
+        "w3": 0.0347
+      },
+      "valid": true
+    },
+    {
+      "id": 15,
+      "parent": 13,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.36825,
+      "fitness": 0.40943,
+      "idea": "Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "close-low -> close-mid",
+      "params": {
+        "w1": 0.6021,
+        "w2": 0.854,
+        "w3": 0.0241
+      },
+      "valid": true
+    },
+    {
+      "id": 17,
+      "parent": 14,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.43356,
+      "fitness": 0.46899,
+      "idea": "Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "+ EWM smoothing",
+      "params": {
+        "w1": 0.4615,
+        "w2": 0.598,
+        "w3": 0.0048,
+        "smoothing_window": 13
+      },
+      "valid": true
+    },
+    {
+      "id": 19,
+      "parent": 14,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.4129,
+      "fitness": 0.45684,
+      "idea": "Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "+ EWM smoothing",
+      "params": {
+        "w1": 0.0507,
+        "w2": 0.9902,
+        "w3": 0.1519,
+        "smoothing_window": 13
+      },
+      "valid": true
+    },
+    {
+      "id": 21,
+      "parent": 13,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.42217,
+      "fitness": 0.46112,
+      "idea": "Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "close-low -> close-mid",
+      "params": {
+        "w1": 0.1004,
+        "w2": 0.8598,
+        "w3": 0.0079
+      },
+      "valid": true
+    },
+    {
+      "id": 25,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44447,
+      "fitness": 0.48455,
+      "idea": "[migrant from island 0] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2098,
+        "w2": 0.7286,
+        "w3": 0.0335,
+        "smoothing_window": 8
+      },
+      "valid": true
+    },
+    {
+      "id": 26,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44261,
+      "fitness": 0.48529,
+      "idea": "[migrant from island 0] Replace cross-sectional z-scoring of each component with rank-normalization \u2014 robust to fat-tailed turnover outliers.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2895,
+        "w2": 0.6091,
+        "w3": 0.0092,
+        "smoothing_window": 2
+      },
+      "valid": true
+    },
+    {
+      "id": 27,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.4211,
+      "fitness": 0.47152,
+      "idea": "[migrant from island 0] Replace cross-sectional z-scoring of each component with rank-normalization \u2014 robust to fat-tailed turnover outliers.",
+      "change": "migration",
+      "params": {
+        "w1": 0.5516,
+        "w2": 0.5265,
+        "w3": 0.0551
+      },
+      "valid": true
+    },
+    {
+      "id": 29,
+      "parent": 27,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.43128,
+      "fitness": 0.47454,
+      "idea": "Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "+ EWM smoothing",
+      "params": {
+        "w1": 0.0205,
+        "w2": 0.511,
+        "w3": 0.0887,
+        "smoothing_window": 7
+      },
+      "valid": true
+    },
+    {
+      "id": 31,
+      "parent": 27,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.33945,
+      "fitness": 0.38045,
+      "idea": "Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "close-low -> close-mid",
+      "params": {
+        "w1": 0.8891,
+        "w2": 0.972,
+        "w3": 0.0068
+      },
+      "valid": true
+    },
+    {
+      "id": 33,
+      "parent": 29,
+      "island": 1,
+      "depth": 3,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.41539,
+      "fitness": 0.44093,
+      "idea": "Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "close-low -> close-mid",
+      "params": {
+        "w1": 0.6722,
+        "w2": 0.546,
+        "w3": 0.0997,
+        "smoothing_window": 15
+      },
+      "valid": true
+    },
+    {
+      "id": 38,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.46058,
+      "fitness": 0.50243,
+      "idea": "[migrant from island 0] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2306,
+        "w2": 0.8111,
+        "w3": 0.0269,
+        "smoothing_window": 3
+      },
+      "valid": true
+    },
+    {
+      "id": 39,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44447,
+      "fitness": 0.48455,
+      "idea": "[migrant from island 0] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2098,
+        "w2": 0.7286,
+        "w3": 0.0335,
+        "smoothing_window": 8
+      },
+      "valid": true
+    },
+    {
+      "id": 40,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "turnover"
+      ],
+      "reward": 0.44447,
+      "fitness": 0.48455,
+      "idea": "[migrant from island 0] [migrant from island 1] [migrant from island 0] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2098,
+        "w2": 0.7286,
+        "w3": 0.0335,
+        "smoothing_window": 8
+      },
+      "valid": true
+    },
+    {
+      "id": 41,
+      "parent": 38,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "retune",
+        "turnover"
+      ],
+      "reward": 0.43669,
+      "fitness": 0.48204,
+      "idea": "re-tune params",
+      "change": "micro re-tune",
+      "params": {
+        "w1": 0.0064,
+        "w2": 0.9953,
+        "w3": 0.0024,
+        "smoothing_window": 8
+      },
+      "valid": true
+    },
+    {
+      "id": 43,
+      "parent": 38,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "ranknorm",
+        "retune",
+        "turnover"
+      ],
+      "reward": 0.45149,
+      "fitness": 0.49675,
+      "idea": "re-tune params",
+      "change": "micro re-tune",
+      "params": {
+        "w1": 0.0271,
+        "w2": 0.8678,
+        "w3": 0.0149,
+        "smoothing_window": 2
+      },
+      "valid": true
+    }
+  ],
+  "n_nodes": 44
+}

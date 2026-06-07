@@ -1,0 +1,133 @@
+{
+  "robust": [
+    "claude_gk_lowvol",
+    "claude_overnight_intraday",
+    "claude_amihud_reversal",
+    "claude_pv_divergence",
+    "kimi_elite_0"
+  ],
+  "universes": {
+    "csi300": {
+      "baseline": {
+        "IC": 0.015846028843413195,
+        "RIC": 0.018509420305538926,
+        "AR": 0.039561692787178915,
+        "SR": 0.2838438688192998,
+        "n_features": 128
+      },
+      "robust_raw": {
+        "IC": 0.015892350549959067,
+        "RIC": 0.018617618989054997,
+        "AR": 0.026098794989953378,
+        "SR": 0.22681936660259208,
+        "n_features": 133
+      },
+      "robust_orthogonal": {
+        "IC": 0.015529479470539778,
+        "RIC": 0.01667325733223561,
+        "AR": 0.0272725205871851,
+        "SR": 0.23187394718669402,
+        "n_features": 133
+      },
+      "gate": [
+        {
+          "name": "claude_gk_lowvol",
+          "marg_ic_train": 0.006608901524515358,
+          "marg_ic_valid": 0.017079281292135172,
+          "marg_ic_test": 0.004280142426268229,
+          "kept": true
+        },
+        {
+          "name": "claude_overnight_intraday",
+          "marg_ic_train": 0.012982892824251366,
+          "marg_ic_valid": 0.007845698134080136,
+          "marg_ic_test": 0.0007582405892229557,
+          "kept": true
+        },
+        {
+          "name": "claude_amihud_reversal",
+          "marg_ic_train": 0.0066433598412631205,
+          "marg_ic_valid": 0.0010681866753877625,
+          "marg_ic_test": 0.002282575960357517,
+          "kept": true
+        },
+        {
+          "name": "claude_pv_divergence",
+          "marg_ic_train": 0.006332613404393513,
+          "marg_ic_valid": 0.0009048252752474553,
+          "marg_ic_test": -0.001599125118666432,
+          "kept": true
+        },
+        {
+          "name": "kimi_elite_0",
+          "marg_ic_train": 0.025376407201082772,
+          "marg_ic_valid": 0.012468053991606397,
+          "marg_ic_test": 0.0007108941199496067,
+          "kept": true
+        }
+      ],
+      "n_orthogonal_kept": 5
+    },
+    "csi500": {
+      "baseline": {
+        "IC": 0.009389301025356924,
+        "RIC": 0.017284853038563298,
+        "AR": -0.0552333355729121,
+        "SR": -0.09536376289244111,
+        "n_features": 128
+      },
+      "robust_raw": {
+        "IC": 0.010054805603135987,
+        "RIC": 0.023153141927566293,
+        "AR": -0.0572870852789944,
+        "SR": -0.10630185599823136,
+        "n_features": 133
+      },
+      "robust_orthogonal": {
+        "IC": 0.013523018087253279,
+        "RIC": 0.014527395606102859,
+        "AR": -0.049802430084926574,
+        "SR": -0.06872942237521436,
+        "n_features": 133
+      },
+      "gate": [
+        {
+          "name": "claude_gk_lowvol",
+          "marg_ic_train": 0.019375618355848695,
+          "marg_ic_valid": 0.016463771254817842,
+          "marg_ic_test": 0.0048582637035420925,
+          "kept": true
+        },
+        {
+          "name": "claude_overnight_intraday",
+          "marg_ic_train": 0.006891615794727052,
+          "marg_ic_valid": 0.0046227434613893455,
+          "marg_ic_test": 0.002877525918257995,
+          "kept": true
+        },
+        {
+          "name": "claude_amihud_reversal",
+          "marg_ic_train": 0.013431634589272887,
+          "marg_ic_valid": 0.007245166499566485,
+          "marg_ic_test": -8.742255614816203e-05,
+          "kept": true
+        },
+        {
+          "name": "claude_pv_divergence",
+          "marg_ic_train": 0.011899267683826634,
+          "marg_ic_valid": 0.0029547701027600438,
+          "marg_ic_test": 0.001509391704199243,
+          "kept": true
+        },
+        {
+          "name": "kimi_elite_0",
+          "marg_ic_train": 0.03643761541699058,
+          "marg_ic_valid": 0.02552450348583811,
+          "marg_ic_test": 0.003823242027519386,
+          "kept": true
+        }
+      ],
+      "n_orthogonal_kept": 5
+    }
+  }
+}

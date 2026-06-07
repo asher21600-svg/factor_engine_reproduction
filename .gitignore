@@ -1,0 +1,33 @@
+# OS / editor noise
+.DS_Store
+.claude/
+
+# Local secrets and environment files
+.env
+.env.*
+*.pem
+*.key
+FE_LLM_PROVIDER=*
+
+# Python caches and local test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Large/generated data panels
+outputs/*.parquet
+outputs/*.log
+outputs/llm_failures/
+
+# Qlib data should live outside the repo
+qlib_data/
+.qlib/
+
+# Keep final reports, figures, JSON summaries, and CSV curves tracked.

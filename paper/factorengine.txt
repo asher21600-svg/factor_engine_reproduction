@@ -1,0 +1,1372 @@
+                                               FactorEngine: A Program-level
+                                        Knowledge-Infused Factor Mining Framework for
+                                                   Quantitative Investment
+
+                                         Qinhong Lin1 , Ruitao Feng2 , Yinglun Feng1 , Zhenxin Huang3 , Yukun Chen1 ,
+                                            Zhongliang Yang1 , Linna Zhou1 , and Binjie Fei2 Jiaqi Liu2 Yu Li2 ( )
+
+                                           Beijing University of Posts and Telecommunications greenred99@bupt.edu.cn
+                                            1
+
+
+
+
+arXiv:2603.16365v2 [cs.AI] 9 Apr 2026
+                                                          2
+                                                             Beijing Value Simplex Technology Co. Ltd.
+                                                             {fengruitao,liyu}@entropyreduce.com
+                                        3
+                                          Yangtze Delta Research Institute, University of Electronic Science and Technology
+                                                                             of China
+
+
+
+                                                 Abstract. We study alpha factor mining—the automated discovery of
+                                                 predictive signals from noisy, non-stationary market data—under a prac-
+                                                 tical requirement that mined factors be directly executable and auditable,
+                                                 and that the discovery process remain computationally tractable at scale.
+                                                 Existing symbolic approaches are limited by bounded expressiveness,
+                                                 while neural forecasters often trade interpretability for performance and
+                                                 remain vulnerable to regime shifts and overfitting. We introduce Fac-
+                                                 torEngine (FE), a program-level factor discovery framework that casts
+                                                 factors as Turing-complete code and improves both effectiveness and effi-
+                                                 ciency via three separations: (i) logic revision vs. parameter optimization,
+                                                 (ii) LLM-guided directional search vs. Bayesian hyperparameter search,
+                                                 and (iii) LLM usage vs. local computation. FE further incorporates a
+                                                 knowledge-infused bootstrapping module that transforms unstructured
+                                                 financial reports into executable factor programs through a closed-loop
+                                                 multi-agent extraction–verification–code-generation pipeline, and an ex-
+                                                 perience knowledge base that supports trajectory-aware refinement (in-
+                                                 cluding learning from failures). Across extensive backtests on real-world
+                                                 OHLCV data, FE produces factors with substantially stronger predictive
+                                                 stability and portfolio impact-for example, higher IC/ICIR (and Rank
+                                                 IC/ICIR) and improved AR/Sharpe, than baseline methods, achieving
+                                                 state-of-the-art predictive and portfolio performance.
+
+                                                 Keywords: alpha factor mining · programmatic factors · program syn-
+                                                 thesis · large language models · Bayesian optimization.
+
+
+                                        1       Introduction
+
+                                        Alpha mining is a central objective in quantitative investment, aiming to dis-
+                                        cover predictive factors that extract actionable signals from noisy, non-stationary
+                                        market data. Despite decades of research [15, 6, 23, 17], effective and efficient fac-
+                                        tor discovery remains challenging due to market complexity, regime shifts, and
+2                   Qinhong Lin et al.
+
+                                 Human                    Bullish acceleration
+                                                                                                                                    Cumulative
+                                 Knowledge                      Bullish deceleration                    ......
+                                             Momentum                                                                               Return
+                                                                                        df_pl = df_pl.with_columns(
+                                 Research                            Momentum Neutral   pl.col('daily_jump_turnover_proxy_raw')
+                                 Report                                                       .rank(method='dense')
+                                                                                              .over('datetime')
+
+                                 Market                         Bearish acceleration    )
+                                                                                              .alias('daily_jump_turnover_proxy')
+
+                                 Insight                  Bearish deceleration
+
+
+    Phase1                                                                                                                           Backtest Performance
+        Quality Assessment
+
+    Phase2
+                                                Implementation                           Idea Generation
+     Reflection & Verification                      Micro Mutation                           Macro Mutation
+
+
+
+
+                                                                                                                                           Decision Tree
+               Optimizer
+
+
+                                                                     Macro-Micro                                    Pick
+
+
+         Verifier    Corrector
+                                             Bayesian search         Co-Evolution                         Chain of experience
+
+
+
+
+                                                                                                                                      Selected Elite Node
+                                                  Analysis                                        Selection
+                                             Code pool integration                               Promising code
+
+
+                                                   Pick        New
+
+
+
+
+         Initial Programs                                                                                                           Pool of Evolved Programs
+
+
+
+Fig. 1: Overview of FactorEngine (FE). Left: Bootstrapping extracts factor ideas
+and converts pseudocode into executable Python to seed a knowledge-infused pool.
+Center: Evolution performs macro–micro co-evolution: LLM agents propose macro
+mutations guided by chains of experience, and Bayesian search conducts micro-level
+parameter tuning with fast validation and feedback updates. Right: Integration selects
+elite factors to train models for backtesting, producing portfolio-level feedback.
+
+
+
+
+severe noise. Existing factor mining approaches can generally be divided into
+two categories: symbolic expression-based methods and neural network-based
+methods. Symbolic factors [4, 8] are built on explicit mathematical expressions,
+providing strong interpretability and clear financial intuition. These factors often
+rely on handcrafted rules and domain expertise, leading to heavy manual effort
+and limited scalability. Additionally, symbolic factors tend to be fragile in the
+face of rapidly changing market conditions and less adaptive to real-world com-
+plexities. In recent years, genetic programming (GP) and reinforcement learning
+(RL) [13, 21, 22] have been used for symbolic factor discovery, enabling auto-
+mated search within predefined operator spaces and accelerating factor evolution
+while preserving a degree of interpretability. However, their strong dependence
+on manually designed operator sets constrains expressiveness, leading to lim-
+ited performance and efficiency in practice. Neural network–based [3, 20, 19]
+approaches can capture implicit patterns and nonlinear relationships in market
+data. While achieving strong predictive performance, these methods typically
+suffer from poor interpretability and are prone to overfitting, especially under
+unconstrained model architectures and limited financial inductive bias. More
+recently, large language models (LLMs) have demonstrated remarkable capabil-
+ities across a wide range of domains [1, 18], sparking growing interest in their
+application to alpha mining. AlphaAgent [16] integrates LLM reasoning with
+financial report knowledge and regularized exploration to mitigate alpha decay,
+while RD-Agent-Quant (RD-AGENT) [9] proposes an agent-based, data-centric
+framework for factor and model joint optimization.
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework          3
+
+    Despite recent advancements, existing alpha mining methods remain chal-
+lenged by effective domain-knowledge integration and efficient factor discov-
+ery. Specifically, we identify three critical challenges in current approaches: (1)
+Bounded expressiveness due to symbolic factor reliance: Symbolic fac-
+tors are constrained by limited operator spaces, resulting in restricted search ca-
+pacity, fragile evolved factors, and a heavy dependence on specific training peri-
+ods. (2) Limited factor diversity and stability: Current methods lack mech-
+anisms to effectively integrate financial theory and transform complex, high-level
+features from financial reports into executable factors. (3) Inefficient evolu-
+tion pipelines: A significant speed mismatch exists between LLM generation
+(e.g., proposals) and evaluation signal production (e.g., backtesting), leading to
+high computational costs and low overall efficiency. These challenges highlight
+the need for more robust and scalable factor evolution frameworks.
+    To address these challenges, we introduce FactorEngine (FE), a program-level
+factor evolution framework integrating logic evolution with Bayesian hyperpa-
+rameter optimization. FE treats parameter optimization as a computationally
+intensive process distinct from semantic reasoning and realizes three key separa-
+tions for efficient macro-micro co-evolution: (1) logic separation between program
+logic/idea evolution and parameter optimization, (2) search strategy separation
+between LLM-driven directional search and automated Bayesian search, (3) re-
+source separation between LLM utilization and local computation resources. The
+LLM agents focus on logic discovery, while local computation with Bayesian
+search automates parameter optimization. Unlike prior works, FE continuously
+evolves factors with Turing-complete programs, allowing complex control flows,
+conditional logic, and iterative computation. This enables more flexible model-
+ing of market dynamics and higher-order feature interactions, making the factors
+more adaptable to rapidly changing market conditions. Initialized with domain-
+knowledge-infused factors derived from financial reports and expert-designed
+factors, FE enhances both efficiency and performance. Across extensive back-
+testing on real-world market data, FE consistently outperforms existing methods
+on predictive and portfolio metrics. Our contributions are as follows:
+
+ – Program-Level Hyper-Heuristic Framework: We propose FactorEngine (FE),
+   a system that transforms factor mining into a Turing-complete program evo-
+   lution problem. FactorEngine leverages environmental feedback and chains
+   of experience to guide LLMs in heuristic searches within high-dimensional
+   code spaces, realizing high performance and interpretable factors
+ – Macro-Micro Co-evolution: FactorEngine decouples the evolution into macro-
+   level heuristic logic evolution and micro-level hyperparameter optimization
+   via Bayesian search, effectively addressing the local optimum issue of param-
+   eters, overcoming efficiency bottlenecks and reducing evolution costs.
+ – Knowledge-Infused Factor Diversity: We propose a closedloop multi-agent
+   module that precisely transforms features from unstructured financial re-
+   ports into programmatic factors, enabling the system to exploit prior knowl-
+   edge from diverse research grounded in transparent economic rationales.
+4         Qinhong Lin et al.
+
+    – Superior Performance & Diversity: Extensive experiments demonstrate that
+      FE surpasses state-of-the-art baseline methods in predictive and portfolio
+      metrics. Notably, FE demonstrates a 58% improvement in Information Co-
+      efficient (IC) and a 126% increase in excess annual return compared to Al-
+      pha158 with factors initially derived from financial reports. Additionally, FE
+      enhances the diversity of the factor pool compared to state-of-art methods.
+
+
+2      Related Work
+2.1     Traditional Alpha Mining
+Traditional alpha mining involves handcrafted factors derived from financial do-
+main knowledge, such as Alpha1584 and Alpha3604 from Qlib, which are known
+for their stability and powerful performance. However, manual factor design is
+labor-intensive and difficult to scale, which motivates automated symbolic ap-
+proaches. To this end, Genetic programming (GP) methods automatically dis-
+cover factors with predefined operators. AlphaEvolve [12] further enhances GP
+with optimization over parameters and matrix-based operations, incorporating
+AutoML techniques. In parallel, reinforcement learning (RL)–based methods for-
+mulate factor mining as a sequential decision-making problem, using financial
+signals such as Sharpe or Calmar ratios as rewards. AlphaForge [13] adopts a
+two-stage RL framework to discover factor combinations and adaptively adjust
+weights. Neural factor models have also been widely explored in alpha mining.
+Classical machine learning models [2], deep learning models [7, 17], as well as
+time-series models [5] have been proposed to extract implicit representations,
+reducing reliance on explicit symbolic expressions. Nevertheless, these methods
+still exhibit limited stability and robustness, and are prone to alpha decay under
+rapidly changing market conditions.
+
+2.2     LLM in Finance
+Recently, large language models have emerged as a promising direction for alpha
+mining. FAMA [10] introduces dynamic factor combination and cross-sample se-
+lection to adapt across market regimes. Shi et al. [14] leverages LLM-powered
+Monte Carlo Tree Search to improve exploration efficiency. AlphaAgent [16]
+leverages agent-based frameworks to extract inspiration for factor evolution from
+financial materials, incorporating diversity-aware constraints to mitigate factor
+decay. RD-Agent [9] proposes a data-centric framework that jointly evolves fac-
+tors and multi-factor models, achieving an end-to-end automation pipeline that
+translates model knowledge to symbolic expressions and executable code.
+    Although these methods significantly improve performance, they still rely on
+symbolic representations, restricting expressive power and search space. Futher-
+more, LLMs in these works are required to both handle logic evolution and
+parameter optimization limitting scalability and evolution efficiency.
+4
+    https://github.com/microsoft/qlib
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework              5
+
+3     Problem Formulation
+
+Consider an N-stock universe S = {s1 , s2 , ..., sN } observed over T trading days
+T = {t1 , t2 , ..., tT }. For each stock si on each day t ∈ T , we observe an M -
+dimensional feature vector. Let Xt−L+1:t ∈ RN ×L×M denote the raw market
+features over a lookback window of length L ending at day t. The objective of
+factor mining is to learn an alpha factor f that maps historical features to a
+l-step-ahead predictive signal,rt+l ∈ RN , where each element corresponds to the
+predicted signal for one stock. Formally, a factor is defined as f (Xt−L+1:t ) → rt+l
+In practice, we often construct a set of K factors {fk }K    k=1 . The outputs of these
+factors are aggregated by a function g (e.g., linear regression or a neural network)
+into a composite predictive signal: zt = g(f1 (Xt−L+1:t ), ..., fk (Xt−L+1:t )). Let
+Y = {yt,1 , yt,2 , ..., yt,n } ∈ RN denote the ground-truth future returns at time t,
+where yt,i represents the realized return of stock si over a predefined horizon (e.g.,
+next-day returns or next-10-day returns). Collecting predictions over time yields:
+           −1                   −1
+Z = {zt }Tt=L  , Y = {Yt }Tt=L     . The objective of alpha mining is then to construct
+a new set of K factors that maximizes a predefined performance metric R(Z, Y)
+such as the Information Coefficient (IC), evaluated over the entire time horizon.
+
+
+4     Methodology
+
+In this work, we focus on programmatic (code-based) factors as the fundamental
+representation for alpha mining. In practice, FactorEngine (FE) enforces explicit
+interface constraints within each factor program, including predefined input data
+types, output formats, permissible Python libraries, and task-specific execution
+semantics. This design ensures that all evolved factors are executable, compara-
+ble, and compatible with downstream evaluation and modeling components. As
+illustrated in Fig. 1, the FE system consists of three functionally decoupled yet
+collaboratively interacting modules, forming a closed-loop pipeline: (1) a Boot-
+strapping Module, which constructs a knowledge-infused initial factor pool;(2) an
+Evolution Module, which performs code-level factor evolution guided by chains of
+experience and empirical feedback signals; and(3) an Integration Module, which
+supports multi-factor modeling and market data backtesting.
+
+
+4.1   Bootstrapping Module
+
+The Bootstrapping Module enables the systematic extraction, refinement and
+transformation of expert knowledge inside financial reports and expert-designed
+factors, into programmatic factors. In contrast to traditional symbolic approaches
+that use reports only as conceptual cues for hypothesis generation, we propose
+a closed-loop multi-agent system that transforms report-derived knowledge into
+executable factors, thereby overcoming the limitations of predefined expression
+spaces. The Bootstrapping Module consists of three interconnected submod-
+ules: (1) PDF Processing: Performs LLM-based compliance screening to retain
+valid reports, and consolidates the core knowledge with the model’s domain
+6            Qinhong Lin et al.
+
+
+                       Polar Coordinate–Based Price–Volume Fusion                      Polar Coordinate–Based Price–Volume Fusion
+                                                                                                                             𝝅
+             Extract                                                                   Let θ be the angle of a stock, 𝜽𝟎 =       as the reference angle.
+                       Let θ be the angle of a stock. The adjusted                                                           𝟒
+                                                                                                                                                 𝜋
+                       function is define as: 𝑓 𝜃 = exp − 𝜃 …                          The adjusted function is define as: 𝑓 𝜃 = exp − 𝜃 −           …
+                                                                                                                                                 4
+    Report                                                             Fin-Analyzer                                                                        Core Idea
+
+                                       \pi/4                                     \State \Comment{Step 4: Polar angle preference}
+                                   ......                                        \State Define $f(\theta)$ to attain its maximum
+                       when $\theta \approx \pi/3$.                              when $\theta \approx \pi/3$.
+                                   ......                                        \State \Comment{Preference for price--volume co-movement}           Pseu-Code
+    Self-Refinement                                              Logic Refiner   \State $\text{angle\_score} \leftarrow f(\theta)$ ......
+                                                                                                                                                     Generator
+
+                                   ......                                                                                                             ......
+                 theta = pl.arctan(y_v,y_p)                                  AttributeError: module 'polars’                          theta = pl.arctan(y_v,y_p)
+                 angle_score = pl.cos(atheta-np.pi/4)\                       has no attribute 'cos'.                                  angle_score = (atheta-np.pi/4)\
+                 .clip(lower_bound=0)                                                                                                 .cos.clip(lower_bound=0)
+Code Synthesizer                   ......                       Executor                                         Corrector                            ......
+
+
+                 Executable Python: def factor( input: pricingdata)->output:df["datetime","instrument","value"]
+
+
+
+                                   Fig. 2: Overview of the Bootstrapping module.
+
+
+knowledge, yielding reliable inputs for downstream factor extraction. (2) Fac-
+tor Extraction: Implements a two-step understanding-to-generation workflow
+with iterative reflection and verification to distill core financial ideas from re-
+search reports into the structured JSON representations accompanied by LaTeX-
+formatted pseudocode (3) Code Generation: Transforms verified pseudocode and
+core idea summaries into executable Python code through iterative refinement
+that validates structural compliance.
+    All successfully extracted factors, along with their core idea summaries and
+economic rationales, are stored as a knowledge-infused initial factor pool that
+serves as the seed population for the Evolution Module. This module not only
+ensures quality by automatically identifying and repairing logical gaps in re-
+ports, but also enables high-fidelity, scalable extraction, rapidly constructing an
+extensive initial pool that substantially broadens the scope of factor mining.
+
+
+4.2       Evolution Module
+
+The Evolution Module, the heart of FE system, is designed to improve factor per-
+formance through a macro–micro co-evolution mechanism. It combines empirical
+validation and analysis, and human-like self-refinement. The co-evolution mech-
+anism separates logic evolution and parameter optimization. At the macro level,
+agents explore and refine factor logic, while at the micro level, Bayesian optimiza-
+tion fine-tunes parameters. Our evolution framework is inspired by OpenEvolve5 .
+In particular, we reuse its agent orchestration mechanisms with our re-designed
+evolution logic, added chain-of-experience, and new program-level mutation strate-
+gies to suit factor mining.
+    Each evolution iteration follows a four-stage pipeline: Program Selection,
+Idea Generation, Implementation, and Analysis. It can be interpreted through
+the paradigm of reinforcement learning: program selection and idea generation
+jointly define the action, automated instantiation and evaluation correspond to
+environment transition, and mutation analysis produces a reward signal that
+5
+    https: //github.com/algorithmicsuperintelligence/openevolve
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework             7
+
+guides future exploration. It can be formulated as F = (P, E, ϕ) where P is tree-
+structure program search space ,E is the execution and verification environment,
+ϕ is agent’s parameterized priors.
+Program Selection. The evolution factor pool is organized as a tree structure,
+where each node corresponds to an executable program evolved from its parent
+and can be directly evaluated to obtain an immediate reward. At each iteration,
+the evolution process selects the most promising node from the current tree
+as the context for subsequent refinement. We define the node value Q(v) as
+the empirical mean reward over all evaluations within the subtree rooted at
+v including itself, reflecting both its performance and its potential. After each
+evaluation, Q(v) and the visit count N (v) are updated via backpropagation
+along the ancestor path. To balance exploration and exploitation, we adopt the
+Upper Confidence Bound for Trees (UCT) criterion to score candidate nodes.
+Specifically, the value of a node is:
+                                                 s
+                                                     ln Nparent(v)
+                       U CT (v) = Q(v) + c                         ,              (1)
+                                                          Nv
+
+where Nparent(v) denotes the visit count of v’s parent, and c is a constant that
+                                                           √
+controls the exploration–exploitation trade-off. We set c = 2 as it is commonly
+used. Unlike standard MCTS settings where nodes represent partial states or
+intermediate decisions, each node in our tree is a fully specified program and
+thus independently executable and evaluable, enabling flexible evolution.
+Idea Generation. We prompt the agent to synthesize environmental feedback
+and its parametric knowledge to generate high-level inspirations and structural
+modifications of programs. This process emphasizes semantic reasoning, pattern
+abstraction, and conceptual exploration, where the LLM excels, realizing macro
+mutations as shown in Fig. 1.
+    Based on the selected program node, we construct C, an evolution chain of
+experience (CoE), from the evolution pool, representing the historical trajec-
+tory leading to the current node. From the global tree, we further select n = 3
+candidate paths {pi }ni=1 that jointly balance high empirical performance and
+low overlap with the current one. Each path serves as a compact representation
+of prior evolution experience. Formally, given C, pi = {pi,1 , pi,2 , ..., pi,j }, and
+function Cvg(·), we define the coverage score as:
+
+                                                        |Φ|      |Φ|
+                      Scov (pi ) = Cvg(C, pi ) = α            +β                  (2)
+                                                        |pi |    |C|
+
+where Φ = pi ∩ C and Cvg(·) measures the degree of overlap between the can-
+didate path and the current chain , and |pi | denotes the count of nodes in the
+path. The effectiveness score of a path is defined as
+
+                                                |pi |
+                                           1 X
+                          Sef f (pi ) =               Score(pi,m )                (3)
+                                          |pi | m=1
+8      Qinhong Lin et al.
+
+where Score(·) denotes the empirical evaluation metric of a node (e.g., IC or
+backtesting performance). The final path score of pi is then computed as:
+
+                       Stotal (pi ) = Sef f (pi ) − γSCvg (pi )               (4)
+
+These selected paths are then assembled into a structured context, which ex-
+poses explicit experience knowledge to the LLM and cooperates with its intrin-
+sic parametric knowledge to generate a mutation idea. In practice, evolutionary
+optimization is inherently non-monotonic. Consequently, FE explicitly captures
+the full dynamic process, including transient fluctuations and local setbacks,
+rather than just the final success. Unlike prior works which predominantly focus
+on static high-performing nodes, exposing the agent to these winding historical
+trajectories stimulates human-like reasoning. This enables LLMs to internalize
+feedback from failures, learn to recover from performance dips, and steer explo-
+ration toward more robust and promising directions.
+Implementation. In this stage, we explored micro mutations, i.e., optimiza-
+tion of parameter-related components, such as window sizes and decay factors
+through an automated search algorithm, and validated via high-throughput ex-
+ecution. Parameter optimization employs Bayesian search, with our implemen-
+tation supporting multiple Bayesian search methods including Tree-structured
+Parzen Estimator (TPE), Gaussian Process-based methods, and other proba-
+bilistic optimization algorithms. For a given evolved program P with parameter
+vector θ ∈ Θ, the optimization problem is θ∗ = arg maxθ∈Θ f (P, θ), where f (P, θ)
+is the evaluation function returning the combined_score metric. These Bayesian
+methods model the objective function probabilistically
+                                                   R ∞ and suggest parameters
+that maximize Expected Improvement: EI(θ) = −∞ max(y ∗ − y, 0) · p(y|θ)dy,
+where y ∗ is a performance threshold (typically the top 25% of observed scores),
+balancing exploration of uncertain regions and exploitation of promising regions
+to efficiently converge to optimal parameter combinations. During the Idea Gen-
+eration phase, the LLM agent specifies parameter search ranges (e.g., window
+sizes, decay factors) based on domain knowledge and previous results, but the
+actual parameter exploration is delegated to this automated Bayesian search
+process.
+    The validation process employs a two-phase strategy to operationalize the
+resource separation: - Phase 1: Sequential code validation with LLM-based
+automatic correction, ensuring evolved programs executes correctly before ex-
+pensive parallel optimization. - Phase 2: Parallel Bayesian optimization en-
+tirely on local computational resources without LLM, using validated code. This
+phase employs multi-process parallel execution, distributing trials across mul-
+tiple workers that execute concurrently. Each worker runs multiple trials, with
+the Bayesian search algorithm coordinating across workers to avoid redundant
+exploration. The evaluation function f (P, θ) computes empirical performance
+metrics through high-throughput execution on historical market data. The eval-
+uation environment supports this through data caching (reducing data loading
+time from 30s to <1s), parallel execution across multiple workers, and efficient
+metrics calculation that aggregates IC (Information Coefficient) and ICIR (In-
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework           9
+
+formation Ratio) across multiple lag periods (1, 3, 5, 10 days) into a single com-
+bined_score objective. This design ensures LLM resources are used efficiently
+(code correction happens once in Phase 1) while local computation resources are
+maximized for high-throughput parameter evaluation in Phase 2.
+Feedback propagation. After a new program is instantiated and evaluated, the
+framework performs feedback propagation to transform empirical outcomes into
+actionable guidance for subsequent evolution. Specifically, the LLM is prompted
+to summarize the core implementation logic of the new program, identify its
+relative changes with respect to both the root and the parent program, as well as
+assess its performance improvement or degradation. These elements are jointly
+organized into a structured format and stored within the node for experience
+reuse in later iterations. Concurrently, the quantitative feedback is propagated
+back along the evolution path, updating the Q and N values of all traversed
+nodes up to the root.
+    Through the integration of these four stages, FE forms an efficient evolu-
+tion framework supporting experience-guided reasoning, diverse idea generation,
+macro–micro coordinated evolution and online validation.
+    Despite forming a complete evolution loop, we observe that LLM-driven inspi-
+ration is inherently stochastic. Consequently, even under identical configurations,
+individual evolution trajectories may diverge substantially in both structure and
+performance, potentially leading to inefficient exploration. To address this issue,
+we introduce a multi-island evolution configuration upon the FE framework to
+improve both efficiency and sampling diversity. Specifically, we initialize N inde-
+pendent evolution processes by duplicating the initial program node and evolve
+them concurrently, each of which acts as an isolated island. Every M evolution
+rounds, each island selects its top-3 programs based on evaluation metrics and
+migrates the copies to other islands as child nodes of the target island’s root
+node, allowing advantageous mutations discovered in one trajectory to propa-
+gate to others. Migrated programs are incorporated into the context construction
+for subsequent idea generation, increasing the likelihood that successful struc-
+tural insights from different trajectories are reused and recombined. This design
+preserves diversity while significantly improving evolution efficiency, facilitating
+more effective exploration under stochastic LLM-driven inspiration.
+
+
+4.3   Integration Module
+
+Building upon the bootstrapping and evolution modules, the integration module
+is designed to construct high-performing multi-factor signals from the evolving
+factor pool via elite node selection and multi-factor modeling, targeting robust
+predictive performance in real-world financial markets. While explicitly modeling
+factor correlations with the existing factor pool is an effective strategy, the com-
+putational cost of IC-based dependency analysis grows rapidly as the factor pool
+expands. To address this issue, we adopt a lightweight threshold-based filtering
+mechanism to control evaluation complexity. Specifically, for each initial node
+with candidate evolved factor nodes, we apply a hard performance threshold to
+10        Qinhong Lin et al.
+
+retain only high-quality candidates. Each factor is evaluated using a weighted
+fitness score (FS) defined as:
+
+                         1
+                  FS =     (IC ∗ 10 + ICIR + RIC ∗ 10 + RICIR)                (5)
+                         4
+which jointly captures both the magnitude and stability of linear and rank-based
+predictive signals. In practice, under a rolling evaluation window of length L=2,
+we retain at most the top 5 factor nodes whose fitness scores exceed 0.4. For each
+retained node, we further select the top 10 associated parameter configurations
+according to the same fitness criterion.
+
+
+5      Experiment Setup
+
+Baselines. We compared FactorEngine (FE) with several representative base-
+line methods: (1) GPlearn [15], which performs symbolic factor discovery via
+genetic programming; (2) Traditional time-series forecasting neural models, such
+as LightGBM (LGBM), LSTM and Transformer, which capture temporal depen-
+dencies in the market data; (3) Specialized financial model, TRA [11], which
+focuses on integrating multiple trading strategies and modeling non-i.i.d. mar-
+ket patterns; (4) Agent-based alpha factor mining methods, including AlphaA-
+gent [16] and RD-Agent-Quant [9] (RD-Agent); (5) hand-crafted factor baseline:
+Alpha-158. For FE, we ran two experiments: one starting with manual factors
+(FE-alpha) and another with financial reports (FE-report). We acknowledge that
+modern LLMs are trained on data extending beyond our test period. However,
+this limitation is shared by all agent-based methods, and we ensured fair compar-
+ison by using Gemini-2.5-Pro6 as the backbone model across all agent baselines.
+Hyperparameters. We conducted two experiments with different budgets, in
+which each framework evolved 200 and 400 iterations respectively, with one
+factor generated per iteration. All generated factors were filtered according to
+each framework’s criteria. For backtesting, we merged generated factors with the
+Alpha-158 set to train a LGBM model and implemented a strategy that selects
+the top-50 assets and retains them for 5 days. For FE, the number of islands was
+set to 2, with migration performed every 7 iterations. Under the two budgets, the
+framework was initialized with 5 and 10 alpha factors (or reports), respectively.
+α, β, γ in Eq. 2, 4 were set to 1, 1, 1.
+Datasets. For all methods, we performed on the full-market dataset and evalu-
+ated in the CSI300 and CSI500 markets. The dataset, collected from Qlib, was
+divided into training (2008-01-01 – 2014-12-31), validation (2015-01-01 – 2016-
+12-31), and testing (2017-01-01 – 2024-12-31) periods. The raw data used to
+calculate alpha factors consist solely of OHLCV features. To prevent potential
+leakage in the knowledge-infused bootstrapping module, we only used financial
+research reports published before 2017 for factor extraction and code bootstrap-
+ping, ensuring that no report content overlaps with the test period.
+6
+     https://ai.google. dev/gemini-api/docs/models
+ FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework                                                                                                                            11
+
+
+Table 1: Predictive and portfolio performance of FE and baseline methods in the
+CSI300 and CSI500 markets (both 200- and 400-iteration settings). Bold denotes the
+best result within each block, and underlining indicates the second-best ; "-1","-2"
+denote 200, 400 iterations, respectively.
+                                                              CSI300                                                                                 CSI500
+  Methods
+                                        IC   ICIR   RIC    RICIR   AR                        |MDD|          IR        SR   IC     ICIR     RIC    RICIR   AR              |MDD|               IR   SR
+  LGBM         0.0040 0.0326 0.0078 0.0587 0.0129 39.18% 0.1706 0.1006 0.0057 0.0531 0.0108 0.0913 -0.0514 48.22% -0.3317 -0.3051
+  LSTM         0.0053 0.0313 0.0129 0.0704 0.0486 34.09% 0.4810 0.3241 0.0054 0.0306 0.0138 0.0726 -0.0104 36.05% -0.0080 -0.1156
+  Transformer -0.0012 -0.0066 -0.0078 -0.0388 0.0342 29.48% 0.3027 0.1490 0.0012 0.0076 -0.0024 -0.0130 -0.0221 53.04% -0.0542 -0.1598
+  TRA          0.0256 0.1559 0.0302 0.1964 0.0674 16.02% 0.6881 0.3747 0.0341 0.3184 0.0295 0.2717 0.0320 31.62% 0.2877 0.0072
+  Alpha158     0.0299 0.2008 0.0331 0.2164 0.0840 17.49% 0.7440 0.4196 0.0403 0.3100 0.0416 0.3172 0.0197 25.17% 0.2152 0.0089
+  GPLearn      0.0292 0.1971 0.0321 0.2120 0.0814 15.99% 0.7337 0.4152 0.0409 0.3190 0.0427 0.3113 0.0272 22.79% 0.2751 0.0451
+  RD-Agent-1   0.0255 0.1667 0.0294 0.1881 0.0507 23.71% 0.4770 0.2627 0.0385 0.2887 0.0398 0.2963 -0.0033 30.55% 0.0404 -0.0915
+  AlphaAgent-1 0.0282 0.1978 0.0313 0.2142 0.0673 17.00% 0.6346 0.3499 0.0400 0.3076 0.0407 0.3135 0.0102 24.40% 0.1431 -0.0319
+  FE-alpha-1   0.0319 0.2178 0.0346 0.2308 0.0888 16.91% 0.7886 0.4526 0.0413 0.3112 0.0430 0.3241 0.0346 21.44% 0.3315 0.0793
+  FE-report-1 0.0333 0.2325 0.0360 0.2459 0.1017 15.89% 0.8959 0.5147 0.0420 0.3244 0.0429 0.3289 0.0458 25.44% 0.4030 0.1222
+  RD-Agent-2   0.0269 0.1833 0.0300 0.1978 0.0917 15.23% 0.8113 0.4647 0.0402 0.3070 0.0411 0.3130 0.0189 24.15% 0.2092 0.0052
+  AlphaAgent-2 0.0314 0.2089 0.0346 0.2252 0.0755 16.23% 0.6779 0.3868 0.0385 0.2870 0.0396 0.2906 0.0235 25.36% 0.2437 0.0266
+  FE-alpha-2   0.0315 0.2211 0.0344 0.2360 0.0943 15.07% 0.8241 0.4762 0.0417 0.3183 0.0434 0.3293 0.0399 23.84% 0.3770 0.1064
+  FE-report-2 0.0474 0.3185 0.0475 0.3146 0.1899 12.61% 1.6001 1.0093 0.0536 0.4140 0.0487 0.3744 0.0836 21.51% 0.6719 0.2945
+
+
+
+                                                                                                                                                    RD-Agent, RoG=0.482, Keep_Ratio=3.9%
+                              Benchmark                                                                Benchmark                                    AlphaAgent, RoG=0.454, Keep_Ratio=21.9%
+                                                                                                                                                    FE-alpha, RoG=0.532, Keep_Ratio=57.1%
+                    2.5       Alpha158                                                       0.8       Alpha158                                     Reference (r=0.5)
+                              AlphaAgent-2                                                             AlphaAgent-2
+                    2.0       RD-Agent-2                                                               RD-Agent-2
+
+
+
+
+Cumulative Return                                                        Cumulative Return
+                              FE-factor-1                                                    0.6       FE-factor-1
+                              FE-factor-2                                                              FE-factor-2
+                    1.5       FE-report-1                                                              FE-report-1
+                              FE-report-2                                                    0.4       FE-report-2
+                    1.0
+                    0.5                                                                      0.2
+                    0.0                                                                      0.0
+                          2017 2018 2019 2020 2021 2022 2023 2024 2025                             2017 2018 2019 2020 2021 2022 2023 2024 2025
+                                              Year                                                                     Year
+
+Fig. 3: (Left) Cumulative excess return comparison in the CSI300 market. (Middle)
+Cumulative excess return comparison in the CSI500 market. (Right) Visualization of
+factor correlation structure of three agent-based methods based on MDS.
+
+
+
+Metrics. We evaluated methods using a comprehensive set of metrics. For pre-
+dictive performance, we reported the Information Coefficient (IC), Information
+Coefficient Information Ratio (ICIR), Rank IC, and Rank ICIR. For portfolio
+performance, we evaluated Annualized Return (AR), Information Ratio (IR),
+maximum drawdown (MDD) and Sharpe Ratio (SR). We calculated these met-
+rics based on the excess return series, which was calculated as the difference
+between the portfolio return and the benchmark return.
+
+
+6                           Results Analysis
+
+6.1                           Main Result
+
+Tab. 1 presents the experimental results of FactorEngine (FE) and baseline
+methods in the CSI300 and CSI500 markets. Traditional methods like LGBM,
+LSTM, and Transformer lack effective feature modeling, leading to poor per-
+formance in both predictive accuracy and portfolio performance. Specifically, in
+the CSI500 market, they yielded negative excess returns. The TRA method used
+12      Qinhong Lin et al.
+
+artificial factors for deep learning modeling, integrating their feature representa-
+tions, which significantly enhanced the predictive capability of the RNN network.
+The 50 factors generated by GPlearn show that, in the CSI300 market, mixing
+these 50 factors with Alpha158 does not further improve the correlation between
+the features and future returns. However, in the CSI500 market, GPlearn’s fac-
+tors provide significant returns. Comparing different agent-based frameworks,
+both FE-alpha and FE-report clearly outperformed other baseline methods in
+both experimental setups. In the CSI300 market, FE-report achieved the highest
+IC of 0.0474 and excess annual return of 18.99%, while in the CSI500 market,
+they reached 0.0536 and 8.36%, respectively. In our experiments, although three
+agent-based methods showed improvements as the number of iterations increases,
+AlphaAgent and RD-Agent performed noticeably worse than the Alpha158 factor
+in the CSI300 market with fewer iterations. However, as the number of itera-
+tions increased, the performance gap narrowed, and they eventually surpassed
+Alpha158. In contrast, both FE setups consistently showed better predictive per-
+formance and portfolio performance than other methods at different iteration
+rounds. This indicates that the program-level factor evolution framework (FE)
+is effective at discovering factors that better capture market characteristics. Fur-
+thermore, when the amount of financial report data increased, the performance
+of the factors evolved from financial reports significantly improved. IC increased
+from 0.0333 to 0.0474, AR improved from 0.1017 to 0.1899, and MDD decreased
+from 15.57% to 12.61%. This demonstrates that FE can effectively extract fi-
+nancial knowledge from financial reports for modeling and continuously evolve
+factors during iterations.
+    Through the two FE experimental setups, we found that the factors evolved
+from reports consistently outperformed those evolved from Alpha, regardless
+of the iteration rounds. We believe that the financial knowledge embedded in
+financial reports helped the agent better analyze market characteristics, leading
+to the generation of more stable and powerful factors. Fig. 3 shows the excess
+cumulative return curves of three agent-based factor mining frameworks in the
+CSI300 and CSI500 markets from 2017 to 2024. The factors evolved using FE
+outperformed Alpha158, AlphaAgent, and RD-AGENT in both 200-iteration
+and 400-iteration experiments.
+
+6.2   Factor Diversity Analysis
+To evaluate the non-redundancy of generated factors, we utilized Multidimen-
+sional Scaling (MDS) to project the correlation matrix of generated factors into
+a 2D space. Specifically, we constructed a dissimilarity matrix with entries 1−|ρ|,
+such that larger Euclidean distances correspond to weaker absolute correlations.
+As shown in the right subfigure of Fig. 3, after filtering out low-quality factors
+with an IC lower than threshold 0.015, FE-alpha retained 36 effective factors,
+corresponding to a 57.1% keep ratio, significantly surpassing the yield of AlphaA-
+gent and RD-AGENT. Beyond mere quantity, the spatial topology further high-
+lights factor diversity. FE-alpha exhibited a clear “circular dispersion” pattern,
+with most factors distributed near the periphery, suggesting stronger mutual
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework                                                                                           13
+
+                                      Alpha158     0.07                                 Alpha158                     RD-Agent_IC           RD-Agent_RIC
+ 0.07                                 AlphaAgent                                        AlphaAgent           0.07    AlphaAgent_IC         AlphaAgent_RIC
+                                      RD-Agent                                          RD-Agent                     FE-factor_IC          FE-factor_RIC
+                                      FE-factor    0.06                                 FE-factor
+ 0.06                                                                                                        0.06
+                                      FE-report    0.05                                 FE-report
+ 0.05
+                                                                                                             0.05
+ 0.04                                              0.04                                              Value
+                                                   0.03                                                      0.04
+ 0.03
+                                                   0.02                                                      0.03
+ 0.02
+ 0.01                                              0.01                                                      0.02
+        2017 2018 2019 2020 2021 2022 2023 2024           2017 2018 2019 2020 2021 2022 2023 2024                   2 5       10         15 20              25   30
+                          Year                                              Year                                                     T+N lag Length
+
+
+Fig. 4: Yearly IC and Rank IC comparisons in the CSI300 (Left) and CSI500 markets
+(Middle). Mean IC and Rank IC between the top 10% factors and future returns at
+T+N on the CSI300 market across three experimental settings (Right).
+
+
+independence and reduced redundancy. This observation is consistent with the
+Radius of Gyration (RoG) metric, where FE-alpha achieved the largest RoG, in-
+dicating the highest overall dispersion in the embedded space. Collectively, these
+results suggest that FE-alpha produced a richer and less redundant factor set,
+offering more complementary alpha signals for downstream multi-factor models.
+
+6.3         Alpha Decay Analysis
+In Fig. 4, the first two subplots show the yearly IC variation trends on the test
+data of the CSI300 market after 400 iterations of the baseline and 3 agent-based
+frameworks. All factors exhibited some degree of decay over time, but throughout
+the entire period, FE-report consistently maintained a high IC and rank IC.
+Notably, it stopped decaying in 2021 and even showed an improvement. The FE-
+alpha experimental group experienced a more gradual decay compared to other
+factors, with no significant fluctuations, resulting in superior cumulative returns
+and portfolio performance. Although the IC of other methods were slightly higher
+in some years, their significant declines in other years make it difficult to mitigate
+the losses caused by this decay. In the third figure of Fig. 4, we presented changes
+in IC and RankIC of the top 10% of evolved factors in factor pools after 400
+rounds of experiments using different lag length return signals as labels on the
+test data for three agent-based methods. We observed that the correlation of
+all three experimental groups increased smoothly as the window size grows.
+Moreover, the average correlation between the FE-evolved factors and the return
+signals was higher than that of the other two baselines.
+
+6.4         Token Efficiency and Executability
+As shown in Tab. 2, we compared execution performance metrics of three agent-
+based frameworks running for 200 iterations. Our FE framework has an over-
+head comparable to AlphaAgent but uses fewer resources than RD-AGENT. FE
+significantly surpasses others in operational efficiency, thanks to the usage of
+Polars framework for computation acceleration and the parallelization of factor
+14                        Qinhong Lin et al.
+
+
+Table 2: Comparison of the runtime performance. "Debug" indicates the API call ratio
+used for code debugging.
+                              Methods               Search Space Run Space Cost($) Time(h) Executable Ratio Debug
+                            RD-Agent                 symbolic                     code           16.91                 48.0                     96%                68%
+                           AlphaAgent                symbolic                     code           11.61                  9.7                     93%                51%
+                          FactorEngine                 code                       code           12.01                 0.5                      99%                32%
+
+                                                                                                                                 Rank IC
+
+                                     bay_avg vs no_bay_avg over iterations
+                                                                                                                                   0.036                       RD-Agent-flash
+                                                                                   max 0.384                                                                   AlphaAgent-flash
+                              bay_avg        no_bay_avg
+                                                                                                         SR                                              IR    FE-factor-flash
+                  0.35                                                                                         0.605                             1.014
+
+                                                                                                                                                               RD-Agent-gpt4o
+                  0.30
+
+     avg metric
+                                                                                                                                     0.026
+                                                                                                                                 0.423 0.747                   AlphaAgent-gpt4o
+                                                                                                                                        0.080
+                  0.25                                                               max 0.254
+                                                                                                                              0.142
+                                                                                                                                     0.176                     FE-factor-gpt4o
+                  0.20                                                                                   MDD
+                                                                                                               0.182                             0.124
+                                                                                                                                                         ARR
+
+                  0.15
+                          0      5      10     15      20     25    30       35     40                                             0.242
+                                                    iteration                                                                   Rank ICIR
+
+
+
+
+Fig. 5: Left:Effect of Bayesian micro-search. Bayesian parameter search (bay_avg)
+yields higher final performance and a faster improvement trajectory than that without
+Bayesian tuning (no_bay_avg). Right: Comparison of three methods evolved using the
+GPT-4o and Gemini-2.5-flash-lite models as backbone agents.
+
+
+
+evolution and calculation. In contrast, RD-AGENT’s generation of numerous
+DL-based factors resulted in reduced efficiency. Additionally, FE evolves pro-
+gressively within the code space, requiring fewer API calls for debugging. In
+contrast, other frameworks rely heavily on API calls to convert expression-based
+factors into code. Moreover, FE achieves the lowest rate of unexecutable factors.
+
+
+
+6.5                      Ablation Study
+
+Bayesian Micro-Search vs. No Bayesian Search. We ablated the micro-
+level parameter optimization by comparing two variants under the same macro-
+level evolution budget (40 iterations): w/ Bayes, applied Bayesian search to
+tune parameters before evaluation, and w/o Bayes, used fixed/default param-
+eters. The left of Fig. 5 shows that Bayesian search improves both final qual-
+ity and search speed. Concretely, the best evolved program after 40 iterations
+was substantially higher with Bayesian search (about 0.38 vs. 0.25). Moreover,
+the improvement trajectory was consistently steeper: Bayesian tuning provides
+a stronger and less noisy fitness signal, allowing FE to identify and promote
+promising program logic earlier, accelerating the discovery of high-performing
+factors rather than only refining performance at the end.
+Backbone Ablation. We conducted experiments using three agent-based frame-
+works on the Gemini-2.5-Flash-Lite7 and GPT-4o8 for backbone ablation, testing
+7
+     https://ai.google. dev/gemini-api/docs/models
+8
+     https://openai.com/index/gpt-4o-system-card/
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework        15
+
+
+Table 3: Experimental comparison of FE-alpha under different prompt settings,
+island configurations, and numbers of initial factors.
+                      config           RIC   RICIR   AR     IR   |MDD|
+               6alpha,1island,CoE     0.0325 0.2165 0.0728 0.6737 0.1678
+               6alpha,1island,top-k   0.0319 0.2125 0.0696 0.6428 0.1626
+               6alpha,2island,CoE     0.0346 0.2308 0.0888 0.7886 0.1691
+               6alpha,2island,top-k   0.0332 0.2189 0.0775 0.7085 0.1614
+               10alpha,1island,CoE 0.0344 0.2358 0.0782 0.7079 0.1787
+               10alpha,1island,top-k 0.0341 0.2266 0.0761 0.6944 0.1673
+               10alpha,2island,CoE 0.0344 0.2360 0.0943 0.8241 0.1557
+               10alpha,2island,top-k 0.0353 0.2408 0.0839 0.7648 0.1708
+
+
+
+
+them on the CSI300 market data. As shown in the right of Fig. 5, all frameworks
+evolved for 200 iterations. Since GPT-4o generally exhibits stronger reasoning
+capabilities, the alpha factors generated by GPT-4o exhibited stronger predic-
+tive and portfolio performance. Among the six setups, FE-factor with GPT-4o
+showed the best results in RankIC, Rank ICIR, AR, IR, and SR.
+Configuration Ablation. During the FE evolution process, the use of a multi-
+island setup and prompts with Chain-of-Experience (CoE) information feedback
+enhanced factor evolution performance. We initiated the evolution with artifi-
+cial factors and conducted ablation experiments to analyze the gains produced
+by these two configurations in factor mining. Tab. 3 presents the results of the
+ablation experiments. In experiments with different numbers of initial factors,
+experiments starting with 2-island, with both prompts with CoE or top-K fac-
+tors, consistently produced factors with higher RankIC compared to the 1-island
+configuration. It also effectively improved AR and IR performance. Similarly, fac-
+tors evolved with CoE prompts generally exhibited higher RankIC and RICIR,
+while also improving the portfolio performance of the evolved factors.
+
+
+7   Conclusion
+
+We presented FactorEngine, a program-level alpha factor mining framework for
+discovering executable and auditable factors while keeping the overall pipeline
+computationally tractable. FE departs from prior symbolic expression search by
+representing factors as Turing-complete programs and improving effectiveness,
+efficiency and diversity. FE further introduces a knowledge-infused bootstrapping
+module transforming financial reports into executable programs via a closed-loop
+multi-agent extraction–verification-generation pipeline, together with the CoE
+that supports trajectory-aware refinement and learning from failures.
+     More broadly, FE is a gradient-free optimization framework for discrete,
+structured search spaces: the key optimization signal is produced by the evo-
+lution machinery (experience-guided exploration and Bayesian micro-search),
+rather than by alpha-specific assumptions, making the approach applicable to
+other black-box discrete optimization problems with expensive execution-based
+evaluation. Future work includes extending to richer data modalities, improving
+16      Qinhong Lin et al.
+
+robustness under distribution shift and transaction costs, enabling the LLM to
+actively interrogate market data, and better characterizing diversity and gener-
+alization in experience-guided program evolution.
+
+
+References
+
+ 1. Brown, T.B., et al.: Language models are few-shot learners. NeurIPS (2020)
+ 2. Cortes, C., Vapnik, V.: Support-vector networks. Machine Learning (1995)
+ 3. Duan, Y., Wang, L., Zhang, Q., Li, J.: Factorvae: A probabilistic dynamic factor
+    model based on variational autoencoder for predicting cross-sectional stock returns.
+    In: Proceedings of the AAAI conference on artificial intelligence. vol. 36, pp. 4468–
+    4476 (2022)
+ 4. Fama, E.F., French, K.R.: The cross-section of expected stock returns. the Journal
+    of Finance 47(2), 427–465 (1992)
+ 5. Fan, X., et al.: Modeling the momentum and mean reversion of stock prices via
+    multiscale representation learning. KDD (2022)
+ 6. Hochreiter, S., Schmidhuber, J.: Long short-term memory. Neural Computation
+    9(8), 1735–1780 (1997). https://doi.org/10.1162/neco.1997.9.8.1735
+ 7. Hochreiter, S., Schmidhuber, J.: Long short-term memory. Neural Comput. (1997)
+ 8. Hou, K., Xue, C., Zhang, L.: Replicating anomalies. The Review of Financial Stud-
+    ies 33(5), 2019–2133 (2020). https://doi.org/10.1093/rfs/hhy131
+ 9. Li, Y., Xu, Y., Xiao, Y., Xu, M., Wang, X., Liu, W., Bian, J.: R&d-agent-quant:
+    A multi-agent framework for data-centric factors and model joint optimization.
+    arXiv preprint arXiv:2505.15155 (2025)
+10. Li, Z., Song, R., Sun, C., Xu, W., Yu, Z., Wen, J.R.: Can large language mod-
+    els mine interpretable financial factors more effectively? a neural-symbolic factor
+    mining agent model. In: Findings of the Association for Computational Linguistics
+    ACL 2024. pp. 3891–3902 (2024)
+11. Lin, H., Zhou, D., Liu, W., Bian, J.: Learning multiple stock trading patterns with
+    temporal routing adaptor and optimal transport. In: Proceedings of the 27th ACM
+    SIGKDD conference on knowledge discovery & data mining. pp. 1017–1026 (2021)
+12. Novikov, A., Vũ, N., Eisenberger, M., et al.: Alphaevolve: A coding agent for
+    scientific and algorithmic discovery. arXiv preprint arXiv:2506.13131 (2025)
+13. Shi, H., Song, W., Zhang, X., Shi, J., Luo, C., Ao, X., Arian, H., Seco, L.A.:
+    Alphaforge: A framework to mine and dynamically combine formulaic alpha fac-
+    tors. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 39, pp.
+    12524–12532 (2025)
+14. Shi, Y., Duan, Y., Li, J.: Navigating the alpha jungle: An llm-powered mcts frame-
+    work for formulaic factor mining. arXiv preprint arXiv:2505.11122 (2025)
+15. Stephens, T.: gplearn: Genetic programming in python. https://github.com/trevo
+    rstephens/gplearn (2016)
+16. Tang, Z., Chen, Z., Yang, J., et al.: Alphaagent: Llm-driven alpha mining with
+    regularized exploration to counteract alpha decay. In: Proc. ACM SIGKDD Int.
+    Conf. Knowl. Discov. Data Min. (KDD). pp. 2813–2822 (2025)
+17. Vaswani, A., Shazeer, N., Parmar, N., et al.: Attention is all you need. In: Advances
+    in Neural Information Processing Systems. vol. 30 (2017)
+18. Wei, J., et al.: Emergent abilities of large language models. arXiv preprint
+    arXiv:2206.07682 (2022)
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework              17
+
+19. Xu, W., Liu, W., Wang, L., Xia, Y., Bian, J., Yin, J., Liu, T.Y.: Hist: A graph-
+    based framework for stock trend forecasting via mining concept-oriented shared
+    information. arXiv preprint arXiv:2110.13716 (2021)
+20. Xu, W., Liu, W., Xu, C., Bian, J., Yin, J., Liu, T.Y.: Rest: Relational event-driven
+    stock trend forecasting. In: Proceedings of the web conference 2021. pp. 1–10 (2021)
+21. Yu, S., Xue, H., Ao, X., et al.: Generating synergistic formulaic alpha collections
+    via reinforcement learning. In: Proceedings of the 29th ACM SIGKDD Conference
+    on Knowledge Discovery and Data Mining. pp. 5476–5486 (2023)
+22. Zhang, T., Li, Y., Jin, Y., Li, J.: Autoalpha: An efficient hierarchical evolution-
+    ary algorithm for mining alpha factors in quantitative investment. arXiv preprint
+    arXiv:2002.08245 (2020)
+23. Zhang, X., Li, P., Zhu, J., Tang, J.: Temporal routing adaptor for deep time series
+    forecasting. In: Proceedings of the 28th ACM SIGKDD Conference on Knowledge
+    Discovery and Data Mining. pp. 2447–2457 (2022)
+
+
+A       Experimental Details
+
+A.1      Implementation Settings
+
+Hardware Setup. All experiments were conducted on a server equipped with 56
+CPU cores, providing a total of 56 parallel threads.
+
+
+A.2      Dataset
+
+The market data used in our experiments were generated using the Qlib frame-
+work9 . All methods were trained and evaluated in the same manner. To avoid
+potential data leakage, we adopt a clean data-splitting strategy for AlphaAgent
+and RD-Agent-Quant during factor mining. Specifically, the training data are
+further split into 2008-01-01 – 2012-12-31, 2013-01-1 – 2013-12-31 and 2014-01-
+01 - 2014-12-31 for training, validation and backtesting in mining stages. After
+all factors are generated, we revert to the original train/validation/test split
+to train the multi-factor models and backtest, ensuring a fair and leakage-free
+evaluation.
+    For AlphaAgent and RD-AGENT-QUANT, which require backtesting during
+the factor mining process, the training data were further split into train/valida-
+tion/test subsets for signal backtesting. In contrast, our proposed method relies
+solely on single-factor metrics, including IC, ICIR, RIC, and RICIR, and there-
+fore does not require additional data splitting.
+    To construct a more robust factor pool, all generated factors from different
+methods were combined with the widely used alpha158 factor set in financial
+research. The definitions of these 158 factors can be found in the Qlib reposi-
+tory10 .
+    In the main experiments, we use two predefined factor subsets for the 200
+iterations experiment and 400 iterations experiments:
+9
+     https://github.com/microsoft/qlib
+10
+     https://github.com/microsoft/qlib/blob/main/qlib/contrib/data/loader.py
+18      Qinhong Lin et al.
+
+ – 5-factor set: {corr5, resi5, klen, klow, vstd5}.
+ – 10-factor set: {corr5, resi10, roc60, rsqr5, cord5, std5, klen, klow,
+   vstd5, wvma5}.
+Further Analysis. It is worth noting that, in Fig.3 of the paper, from 2017 to
+2021, due to the overall market characteristics of A-shares, cross-sectional factors
+struggled to generate profits, and the overall excess cumulative return in the
+CSI300 market was negative. Only after 2021, when the market characteristics
+shifted, did these factors start to generate profits.In the CSI500 market, multiple
+significant backtest results appeared within the backtest period, all of which
+were similarly affected by market shocks.This contrasts with the findings in the
+AlphaAgent and RD-AGENT-Quant experimental reports.
+
+A.3    Evaluation Metrics
+We adopt both predictive and strategy-level metrics to evaluate performance.
+
+Information Coefficient (IC). IC measures the cross-sectional correlation be-
+tween predicted scores and realized returns, and is widely used in quantitative
+finance.
+
+Information Coefficient Information Ratio (ICIR). ICIR evaluates the temporal
+stability of IC and is defined as:
+                                         mean(IC)
+                                ICIR =            .                             (6)
+                                          std(IC)
+Rank Information Coefficient (RIC). RIC refers to the Spearman rank correla-
+tion between predicted and realized return rankings.
+
+Rank Information Coefficient Information Ratio (RICIR). RICIR evaluates the
+stability of RIC over time:
+                                         mean(RIC)
+                              RICIR =              .                            (7)
+                                          std(RIC)
+Annual Return (AR) AR reflects the compound geometric growth rate of the
+portfolio:
+                               T
+                                          ! 252
+                                             T
+                              Y
+                     AR =        (1 + rt )      − 1,                 (8)
+                                   t=1
+where rt denotes the daily return and T is the total number of trading days.
+
+Annual Excess Return (AER) AER reflects the compound annual growth rate
+of the portfolio relative to a benchmark:
+                                             252
+                                      PT /P0 T
+                             AER =                 − 1,             (9)
+                                      BT /B0
+where Pt and Bt denote the portfolio value and the benchmark value at time t,
+respectively, and T is the total number of trading days.
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework          19
+
+Maximum Drawdown (MDD) MDD measures the maximum loss from peak to
+trough during the evaluation period:
+
+                                        maxs∈[1,t] Ps − Pt
+                                                          
+                    MDD = max                                , (10)
+                             t∈[1,T ]     maxs∈[1,t] Ps
+
+where Pt denotes the portfolio value at time t.
+
+Relative Maximum Drawdown (RMDD) RMDD measures the maximum draw-
+down of the strategy relative to a benchmark. We first define the relative net
+value as:
+                                          Pt
+                                  Vtrel =    ,                            (11)
+                                          Bt
+and compute the maximum drawdown on Vtrel :
+                                                                      !
+                                           maxs∈[1,t] Vsrel − Vtrel
+                   RMDD = max                                             .    (12)
+                              t∈[1,T ]       maxs∈[1,t] Vsrel
+
+Sharpe Ratio (SR) The Sharpe Ratio evaluates risk-adjusted returns by normal-
+izing excess returns with their volatility. It is defined as:
+
+                                           E[rt − rf ]
+                              SR = p                     ,                     (13)
+                                           Var(rt − rf )
+where rt denotes the portfolio return at period t and rf is the risk-free rate over
+the same period. In our experiments, following common practice in empirical
+backtesting, we set rf = 0 when computing SR on daily returns. We report the
+annualized Sharpe Ratio, computed as:
+                                    √            mean(rt − rf )
+                         SRann =         252 ·                  .              (14)
+                                                  std(rt − rf )
+
+A.4    Trading Strategy
+
+During backtesting, we explicitly account for the market’s daily price-limit (limit-
+up/limit-down) rules and impose corresponding constraints on trade execution.
+The trading strategy is defined as follows:
+
+ – At the close of trading day t, the model generates a ranking score for each
+   stock in the pool based on predicted returns.
+ – We adopt a rolling update strategy with a fixed 5-day holding period to
+   balance signal freshness and turnover costs. Specifically, the total capital
+   is managed as five overlapping sub-portfolios. On each trading day t + 1,
+   we liquidate only the sub-portfolio that has reached its 5-day maturity and
+   reinvest the released cash into the top 50 stocks currently ranked by the
+   model.
+20     Qinhong Lin et al.
+
+ – The selected top 50 stocks within each newly constructed tranche are weighted
+   equally.
+ – We employ a realistic cost model aligned with the Chinese A-share market.
+   This includes a bilateral commission rate of 1.5 × 10−4 (0.00015) charged on
+   both buy and sell orders, and a unilateral stamp duty of 5 × 10−4 (0.0005)
+   charged only on sell orders.
+ – To account for execution uncertainty and market impact, we incorporate a
+   proportional slippage of 8 × 10−4 (0.0008) on all trades.
+ – We adhere to strict realistic constraints: the minimum trading unit is set to
+   1 lot (100 shares). To ensure liquidity, we impose a volume limit preventing
+   the strategy from exceeding 10% of any stock’s daily trading volume. The
+   initial capital is set to 100, 000, 000 (CNY) to stabilize portfolio construction
+   and minimize the impact of rounding errors on small positions.
+
+A.5   Baselines
+We compare our method with the following baselines:
+ – GPLearn: A symbolic regression method based on genetic programming.
+ – Transformer: A multi-head self-attention model that captures long-range
+   dependencies in time-series data.
+ – LSTM: A recurrent neural network with memory cells and gating mecha-
+   nisms for modeling long-term dependencies.
+ – TRA: A Transformer-based model incorporating a dynamic temporal rout-
+   ing mechanism to adaptively capture diverse market patterns.
+ – LightGBM: A gradient boosting decision tree (GBDT) framework that
+   builds an ensemble of trees in a stage-wise manner, optimized with histogram-
+   based split finding and leaf-wise growth to achieve high efficiency and strong
+   performance on tabular features.
+
+A.6   Prompt Design
+Evolution Module
+
+Idea Generation. The agent behavior is constrained by an explicit system prompt.
+We show the template format below.
+  System Prompt
+
+  Listing 1.1: System prompt format used for idea generation in the
+  Evolution Module.
+      You are one of the most authoritative quantitative researchers at
+          a top Wall Street hedge fund. I need your expertise to design
+           and implement new factors or models to enhance investment
+          returns. You will receive information about # Original
+          Program and # Current Program and # Program Evolution History
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework        21
+
+
+           contains samples of your historical evolution tests and
+          results. Your goal is to improve the factor or raise a new
+          one and maximize the specified evaluation metrics while
+          avoiding any look-ahead bias or data leakage based on your
+          knowledge.
+
+      Metrics description: ...
+
+      Task description:
+        1.Implement optimizations: ...
+
+       2.Propose & implement alternative factors: ...
+
+       3.Compliance & rigor: ...
+
+      Hard requirements:
+        1....
+        2....
+        ...
+
+
+    The system prompt is further conditioned on a chain of experience containing
+historical evolution trajectories as shown below.
+  Chain of Experience
+
+  Listing 1.2: Chain-of-experience template provided to the agent, including
+  programs, metrics, evolution history, and response constraints.
+  # Original Program
+  ‘‘‘{language}
+  {original_program}
+  ‘‘‘
+
+  # Original Information
+  - Metrics: {original_metrics}
+  - Fitness: {original_fitness_score}
+  - Feature coordinates: {original_feature_coords}
+
+  # Program Evolution History: your historical continuous evolutionary
+      attempt paths, including historical idea, and changes in metrics
+      compared to the initial program and every previous step.
+  {evolution_history}
+
+  # Current Program: a program evolute from a previous attempt along a
+      evolution path
+  ‘‘‘{language}
+  {current_program}
+  ‘‘‘
+22    Qinhong Lin et al.
+
+
+
+ # Current Program Information
+ - Metrics: {current_metrics}
+ - Fitness: {current_fitness_score}
+ - Feature coordinates: {current_feature_coords}
+ - Focus areas again previous step: {
+     current_improvement_areas_against_previous}
+ - Focus areas again #Original Program: {
+     current_improvement_areas_against_origin}
+ {current_artifacts}
+
+ # Task
+ Suggest improvements to the program that will improve its -Metrics
+     following ’Metrics description’ and -Fitness.
+ The system maintains diversity across these dimensions: {
+     feature_dimensions}
+ Different solutions with similar fitness but different features are
+     valuable.
+
+ # Response requirement
+ You MUST use the format shown below with the exact SEARCH/REPLACE
+      diff of code changes:
+     ###Analyse: Analyze the domain insights you have gained from the
+          comparison between # Current Program Information and #
+          Original Program Information, and the lesson learn from
+          previous evolution attempts.
+
+     ###IDEA: Your idea about how to improve the performance according
+         to your domain insights. Learn from attempts that lead to
+         high scores and avoid attempts that have already degraded.
+         You should focus on both the factor function and the
+         parameters.
+
+     ###Code changes:
+     <<<<<<< SEARCH
+     # Original code that need to be replaced (must match exactly)
+     =======
+     # New replacement code
+     >>>>>>> REPLACE
+
+     You can suggest multiple changes. Each SEARCH section must exactly
+          match code in the ’# Current Program’.
+
+     IMPORTANT: Do not rewrite the entire program - focus on targeted
+         improvements.
+
+     ###Parameters: Define the search ranges for Bayesian optimization
+         (Optuna). For each parameter, specify the type and range.
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework             23
+
+
+
+      Format for numeric parameters:
+      {{"param_name": {{"type": "float", "low": min_value, "high":
+          max_value}},
+        "param_name2": {{"type": "int", "low": min_int, "high": max_int
+            }}}}
+
+      Example:
+      {{"w_v": {{"type": "float", "low": 0.3, "high": 0.9}},
+        "N_r": {{"type": "int", "low": 5, "high": 30}}}}
+
+
+
+A.7   Illustrative Example: From Report-Inspired Seed to Evolved
+      Programmatic Factor
+To concretely demonstrate how FactorEngine (FE) operationalizes program-level
+evolution, we provide an end-to-end example of a factor program. We show (i) an
+initial executable factor generated by the bootstrapping module from a financial
+research report in Fig. A.7, and (ii) an evolved factor produced after 40 evolu-
+tion iterations in Fig. A.7, under the same I/O contract. This example highlights
+how FE refines factor logic (e.g., turnover-aware proxies, rank-based normaliza-
+tion, and temporal smoothing) while maintaining executability and auditability
+throughout the evolution process.
+
+  Seed Factor Program (Bootstrapped from Research Report)
+
+  Listing 1.3: Report-inspired initial factor (seed program). An
+  executable programmatic factor produced by the bootstrapping module
+  from a financial research report, serving as a seed in the initial factor pool.
+
+  def factor(pricing_data: pl.DataFrame, parameters):
+      w1 = parameters.get("w1", 0.25)
+      w2 = parameters.get("w2", 0.25)
+      w3 = parameters.get("w3", 0.50)
+      EPSILON = parameters.get("epsilon", 1e-9)
+
+      if isinstance(pricing_data, pd.DataFrame):
+          # Handle pandas DataFrame input
+          df_pl = pl.from_pandas(pricing_data.reset_index()).rename({
+              ’$close’: ’close’,
+              ’$open’: ’open’,
+              ’$high’: ’high’,
+              ’$low’: ’low’,
+              ’$volume’: ’volume’
+          })
+      else:
+          df_pl = pricing_data.rename({
+24    Qinhong Lin et al.
+
+
+            ’$close’: ’close’,
+            ’$open’: ’open’,
+            ’$high’: ’high’,
+            ’$low’: ’low’,
+            ’$volume’: ’volume’
+         })
+     df_pl = df_pl.select(
+         [’instrument’, ’datetime’, ’open’, ’high’, ’low’, ’close’, ’
+              volume’]
+     ).with_columns([
+         pl.col("datetime").cast(pl.Date),
+         pl.col([’open’, ’high’, ’low’, ’close’, ’volume’]).cast(pl.
+              Float64)
+     ])
+     daily_range_expr = pl.col(’high’) - pl.col(’low’)
+     sf1_expr = -pl.col(’volume’) * (pl.col(’close’) - pl.col(’low’)) /
+           (daily_range_expr + EPSILON)
+     sf2_expr = -pl.col(’volume’) * (pl.col(’high’) - pl.col(’open’)) /
+           (daily_range_expr + EPSILON)
+     sf3_expr = pl.col(’volume’) * (pl.min_horizontal(’open’, ’close’)
+          - pl.col(’low’)) / (daily_range_expr + EPSILON)
+     df_factor = df_pl.with_columns(
+         z1=(sf1_expr - sf1_expr.mean().over(’datetime’)) / (sf1_expr.
+              std(ddof=0).over(’datetime’) + EPSILON),
+         z2=(sf2_expr - sf2_expr.mean().over(’datetime’)) / (sf2_expr.
+              std(ddof=0).over(’datetime’) + EPSILON),
+         z3=(sf3_expr - sf3_expr.mean().over(’datetime’)) / (sf3_expr.
+              std(ddof=0).over(’datetime’) + EPSILON),
+     ).with_columns(
+         (w1 * pl.col(’z1’) + w2 * pl.col(’z2’) + w3 * pl.col(’z3’)).
+              alias(’Factor’)
+     )
+     df_tf = df_factor.select([’instrument’, ’datetime’, ’Factor’])
+     df_tf = df_tf.filter(
+         pl.col(’Factor’).is_not_nan() &
+         pl.col(’Factor’).is_finite()
+     )
+     df_tf = df_tf.with_columns(pl.col("datetime").cast(pl.Date).alias
+          ("datetime"))
+
+     return df_tf
+
+
+
+
+ Evolved Factor Program (After 40 Evolution Iterations)
+FactorEngine: A Program-level Knowledge-Infused Factor Mining Framework       25
+
+
+ Listing 1.4: Evolved factor after 40 iterations. A representative factor
+ program evolved from the seed via FE’s macro–micro co-evolution, incorpo-
+ rating refined signal construction (e.g., turnover-based proxies, rank normal-
+ ization, and exponential smoothing) while preserving the same executable
+ interface.
+
+ def trend_factor(pricing_data: pl.DataFrame, parameters):
+     w3 = parameters.get("w3", 0.50)
+     w1 = parameters.get("w1", (1.0 - w3) / 2.0)
+     w2 = parameters.get("w2", (1.0 - w3) / 2.0)
+     smoothing_window = parameters.get("smoothing_window", 5)
+     EPSILON = parameters.get("epsilon", 1e-9)
+
+     if isinstance(pricing_data, pd.DataFrame):
+         # Handle pandas DataFrame input
+         df_pl = pl.from_pandas(pricing_data.reset_index()).rename({
+             ’$close’: ’close’, ’$open’: ’open’,
+             ’$high’: ’high’, ’$low’: ’low’, ’$volume’: ’volume’})
+     else:
+         df_pl = pricing_data.rename({
+             ’$close’: ’close’, ’$open’: ’open’,
+             ’$high’: ’high’, ’$low’: ’low’, ’$volume’: ’volume’})
+     df_pl = df_pl.select(
+         [’instrument’, ’datetime’, ’open’, ’high’, ’low’, ’close’, ’
+              volume’]
+     ).with_columns([
+         pl.col("datetime").cast(pl.Date),
+         pl.col([’open’, ’high’, ’low’, ’close’, ’volume’]).cast(pl.
+              Float64)
+     ]).sort([’instrument’, ’datetime’])
+     turnover_expr = pl.col(’volume’) * pl.col(’close’) # Use turnover
+          for capital-weighted signal
+     sf1_expr = -turnover_expr * (pl.col(’close’) - (pl.col(’high’) +
+          pl.col(’low’)) / 2.0) / (daily_range_expr + EPSILON)
+     sf2_expr = -turnover_expr * (pl.col(’high’) - pl.col(’open’)) / (
+          daily_range_expr + EPSILON)
+     sf3_expr = turnover_expr * (pl.min_horizontal(’open’, ’close’) -
+          pl.col(’low’)) / (daily_range_expr + EPSILON)
+     rank_norm_expr = lambda expr: (expr.rank(method=’average’).over(’
+          datetime’) / (expr.count().over(’datetime’) + 1)) - 0.5
+     df_factor = df_pl.with_columns(
+         # Calculate daily raw combined factor using rank-normalized
+              components
+         raw_combined_factor=(
+             w1 * rank_norm_expr(sf1_expr) +
+             w2 * rank_norm_expr(sf2_expr) +
+             w3 * rank_norm_expr(sf3_expr))
+26    Qinhong Lin et al.
+
+
+     ).with_columns(
+         smoothed_factor=pl.col(’raw_combined_factor’).ewm_mean(
+             span=smoothing_window, min_periods=max(1, smoothing_window
+                  // 2)).over(’instrument’)
+     ).with_columns(
+         Factor=(
+             (pl.col(’smoothed_factor’) - pl.col(’smoothed_factor’).
+                 mean().over(’datetime’)) /
+             (pl.col(’smoothed_factor’).std(ddof=0).over(’datetime’) +
+                 EPSILON))
+     )
+     df_tf = df_factor.select([’instrument’, ’datetime’, ’Factor’])
+     df_tf = df_tf.filter(pl.col(’Factor’).is_not_nan() & pl.col(’
+          Factor’).is_finite())
+     df_tf = df_tf.with_columns(pl.col("datetime").cast(pl.Date).alias
+          ("datetime"))
+
+     return df_tf
+
