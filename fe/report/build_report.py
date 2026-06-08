@@ -556,6 +556,75 @@ def build_html(outputs: Path = None) -> Path:
     overfit_table = _table(["universe", "augmented IC better", "augmented IC worse",
                             "worst year", "worst IC Δ"], of_rows)
 
+    # --- excess-return findings and concrete improvement plan ---
+    excess_rows = []
+    for uni in results["universes"]:
+        U = results["universes"][uni]
+        b = U["backtest"]["baseline"]
+        a = U["backtest"]["augmented"]
+        m_b = U["model"]["baseline"]
+        m_a = U["model"]["augmented"]
+        excess_rows.append((
+            uni.upper(),
+            _num(m_b["IC"]),
+            _num(m_a["IC"]),
+            _pct(b["AER"]),
+            _pct(a["AER"]),
+            _pct(a["AER"] - b["AER"]),
+            _pct(b.get("ann_excess")),
+            _pct(a.get("ann_excess")),
+            f'{b["SR"]:.2f}→{a["SR"]:.2f}',
+            f'{_pct(b.get("ann_cost"))}→{_pct(a.get("ann_cost"))}',
+            f'{b.get("ann_turnover", 0):.1f}→{a.get("ann_turnover", 0):.1f}',
+        ))
+    excess_table = _table(["universe", "base IC", "+FE IC", "base AER", "+FE AER",
+                           "AER Δ", "base ann excess", "+FE ann excess", "SR",
+                           "ann cost", "ann turnover"], excess_rows)
+
+    if ortho and ortho.get("universes"):
+        _u3o = ortho["universes"].get("csi300", {})
+        _u5o = ortho["universes"].get("csi500", {})
+        aux_note = (
+            f"Fresh V3 diagnostics are informative: on CSI300, raw robust selection lifts model IC "
+            f"{_num(_u3o.get('baseline',{}).get('IC'))}→{_num(_u3o.get('robust_raw',{}).get('IC'))} "
+            f"but still leaves Sharpe below baseline ({_u3o.get('baseline',{}).get('SR',0):.2f}→"
+            f"{_u3o.get('robust_raw',{}).get('SR',0):.2f}); on CSI500, raw/orthogonal robust factors lift "
+            f"IC and Sharpe versus baseline (raw IC {_num(_u5o.get('robust_raw',{}).get('IC'))}, "
+            f"orth SR {_u5o.get('robust_orthogonal',{}).get('SR',0):.2f}). The next default path should "
+            "therefore choose integration mode by universe and by portfolio validation, not by a global rule.")
+    else:
+        aux_note = (
+            "Run the V3 robust/orthogonal diagnostics before finalizing the default path, so the model can choose "
+            "the integration mode that improves portfolio metrics rather than only model IC.")
+
+    excess_plan_html = (
+        "<h2>Excess-return findings and improvement plan</h2>"
+        "<p><b>Finding:</b> the refreshed default path improves CSI300's benchmark-relative return, but it does "
+        "not solve excess return overall. CSI300 AER improves but remains negative; CSI500 model IC improves while "
+        "AER, annualized excess, and Sharpe worsen. That means the current pipeline finds some predictive signal, "
+        "but the portfolio layer is still paying too much cost or choosing the wrong integration mode.</p>"
+        f"{excess_table}"
+        f"<p class=\"small\">{aux_note}</p>"
+        "<ol>"
+        "<li><b>Make AER/IR-after-cost the selection gate.</b> Keep IC/RIC as diagnostics, but promote an elite "
+        "bundle only if train and validation AER or IR improve under the same top-50, 5-day, commission, stamp, "
+        "and slippage backtest used in the report.</li>"
+        "<li><b>Add an explicit turnover and cost budget.</b> Annualized costs are around 9-10% in the current "
+        "default path. Increase the portfolio-objective penalty on rank churn, and reject candidates whose "
+        "annualized turnover/cost rises without a compensating AER lift.</li>"
+        "<li><b>Select per universe instead of one shared bundle.</b> CSI300 and CSI500 react differently. Use "
+        "separate elite sets, integration modes, and blend weights for large-cap and mid-cap universes.</li>"
+        "<li><b>Choose raw vs orthogonal by validation portfolio metrics.</b> Orthogonal residuals preserve useful "
+        "CSI500 signal but are too aggressive for CSI300 in this run. The default path should test raw, "
+        "orthogonal, and shrinkage-blend variants, then keep the one with the best validation AER/IR.</li>"
+        "<li><b>Tune the portfolio construction, not only the factor formula.</b> Grid top-k, holding period, "
+        "rebalance cadence, and FE/baseline blend weight on train/validation. Longer holding or smaller FE blend "
+        "can reduce churn when IC exists but excess return is negative.</li>"
+        "<li><b>Persist portfolio diagnostics for every V3 arm.</b> Store AER, IR, RMDD, annualized excess, "
+        "annualized turnover, and annualized cost in robust/orthogonal JSON outputs, so the report can compare "
+        "candidate integrations on tradability rather than only IC/SR.</li>"
+        "</ol>")
+
     v3_html = (
         "<ol>"
         "<li><b>#1 Robust elite selection — implemented.</b> Rank factors by multi-window, cross-universe "
@@ -572,7 +641,7 @@ def build_html(outputs: Path = None) -> Path:
         "(Result 6 / <code>v3_4to6.json</code>).</li>"
         "<li><b>#5 Plateau-aware compute — implemented/demonstrated.</b> This run found the frontier by iteration "
         f"{plateau_iter or '~99'}; <code>EvolutionConfig.patience</code> and the post-hoc audit show the same best "
-        "factor can be reached in 43% of the compute at patience=30 (Result 6).</li>"
+        "factor could be reached with less compute once the frontier plateaus (Result 6).</li>"
         "<li><b>#6 Tighter LLM prompt/parser + parameter contract — implemented.</b> The Kimi response format now "
         "requires one mutation theme, all tunables declared in JSON ranges, no look-ahead, and a CSI300/CSI500 "
         "microstructure rationale; the parser auto-declares hidden <code>parameters.get()</code> knobs and Result 6 "
@@ -594,27 +663,29 @@ def build_html(outputs: Path = None) -> Path:
         u3r = robust["universes"].get("csi300", {})
         dvo = u3r.get("validation_only", {}).get("IC", 0) - u3r.get("baseline", {}).get("IC", 0)
         drb = u3r.get("robust", {}).get("IC", 0) - u3r.get("baseline", {}).get("IC", 0)
+        valid_names = ", ".join(robust.get("validation_only", [])) or "—"
+        robust_names = ", ".join(robust.get("robust", [])) or "—"
+        robust_status = "degradation eliminated" if drb >= 0 else "degradation reduced"
+        gk_note = (f" <code>gk_lowvol</code> remains a compact comparator "
+                   f"(validation→test IC {_num(gk.get('ic_valid'))}→{_num(gk.get('ic_test'))}, "
+                   "1 param, 0 hidden)." if gk else "")
         v3result_html = (
-            "<h2>Result 4 — V3 #1–#2 implemented: OOS-robust selection eliminates the overfit</h2>"
+            "<h2>Result 4 — V3 #1–#2 implemented: robust selection stress-tests the elite set</h2>"
             "<p>Re-selecting elite factors with the V3 rule — sign-consistent on <b>train AND validation</b> "
             "plus a parsimony / hidden-knob penalty — using the <i>existing</i> 300-iter run (<b>no LLM "
-            "re-run</b>). The rule rejects the high-validation-but-overfit Kimi elites in favour of "
-            "parsimonious, train-and-validation-consistent factors:</p>"
+            "re-run</b>). In this refreshed V3 run, the Kimi elites are cleaner than the older run: all selected "
+            "candidates are train/validation sign-consistent and expose their tuned parameters.</p>"
             "<ul>"
-            f"<li><b>Validation-only</b> picks the 5 Kimi elites (validation IC ≈0.057 but <b>test ≈0</b>; "
-            "8–9 params, 4–5 hidden defaults).</li>"
-            f"<li><b>Robust</b> picks <code>{', '.join(robust.get('robust', []))}</code> — e.g. "
-            f"<code>gk_lowvol</code> (validation→test IC {_num(gk.get('ic_valid'))}→{_num(gk.get('ic_test'))}, "
-            "1 param, 0 hidden).</li>"
+            f"<li><b>Validation-only</b> picks <code>{valid_names}</code>.</li>"
+            f"<li><b>Robust</b> reorders/picks <code>{robust_names}</code>.{gk_note}</li>"
             "</ul>"
             f"{ab_table}"
             f"<p class=\"small\">On CSI300 robust selection moves the augmented model from "
-            f"{_num(u3r.get('validation_only',{}).get('IC'))} (<b>{dvo:+.4f}</b> vs baseline — degrading) back to "
-            f"{_num(u3r.get('robust',{}).get('IC'))} (<b>{drb:+.4f}</b> — <b>degradation eliminated</b>) and "
-            f"recovers Sharpe ({u3r.get('validation_only',{}).get('SR',0):.2f}→{u3r.get('robust',{}).get('SR',0):.2f}). "
-            "It stops the overfit factors from hurting the model; it does not yet <i>beat</i> the strong "
-            "Alpha158-128 baseline because the evolved OHLCV factors stay largely redundant with it — addressed "
-            "by orthogonalization in V3 #3 / Result 5.</p>")
+            f"{_num(u3r.get('validation_only',{}).get('IC'))} (<b>{dvo:+.4f}</b> vs baseline) to "
+            f"{_num(u3r.get('robust',{}).get('IC'))} (<b>{drb:+.4f}</b> — <b>{robust_status}</b>). "
+            f"Sharpe remains a constraint ({u3r.get('validation_only',{}).get('SR',0):.2f}→"
+            f"{u3r.get('robust',{}).get('SR',0):.2f}, baseline {u3r.get('baseline',{}).get('SR',0):.2f}), "
+            "so this fix improves IC robustness but does not by itself solve portfolio excess return.</p>")
 
     # --- V3 #3 applied: orthogonalization A/B (if scripts/07 was run) ---
     ortho_html = ""
@@ -628,22 +699,29 @@ def build_html(outputs: Path = None) -> Path:
                      "base SR", "raw SR", "orth SR"], rows)
         u3 = ortho["universes"].get("csi300", {})
         u5 = ortho["universes"].get("csi500", {})
+        d3_raw = u3.get("robust_raw", {}).get("IC", 0) - u3.get("baseline", {}).get("IC", 0)
+        d3_orth = u3.get("robust_orthogonal", {}).get("IC", 0) - u3.get("baseline", {}).get("IC", 0)
+        d5_raw = u5.get("robust_raw", {}).get("IC", 0) - u5.get("baseline", {}).get("IC", 0)
         d5 = u5.get("robust_orthogonal", {}).get("IC", 0) - u5.get("baseline", {}).get("IC", 0)
         beats5 = d5 > 0
+        orth_basis = rc.get("orthogonal_max_features")
+        orth_note = (f" This report run used the top-{orth_basis} Alpha158 columns as the residualization basis "
+                     "for tractability." if orth_basis else "")
         ortho_html = (
-            "<h2>Result 5 — V3 #3 implemented: orthogonalization beats the baseline on CSI500</h2>"
+            "<h2>Result 5 — V3 #3 implemented: orthogonal residual alpha is universe-dependent</h2>"
             "<p>Each robust factor is residualized per date against the 128 Alpha158 features and gated on "
             "marginal (residual) IC — feeding the model only the component Alpha158 does <i>not</i> already "
-            "capture.</p>"
+            f"capture.{orth_note}</p>"
             f"{ab}"
-            f"<p class=\"small\">On <b>CSI500</b> the orthogonalized factors push test IC "
+            f"<p class=\"small\">On <b>CSI500</b>, raw robust factors lift test IC by <b>{d5_raw:+.4f}</b>; "
+            f"orthogonal residuals retain a smaller "
             f"{_num(u5.get('baseline',{}).get('IC'))}→{_num(u5.get('robust_orthogonal',{}).get('IC'))} "
             f"(<b>{d5:+.4f}</b>, {'+' if beats5 else ''}{100*d5/max(1e-9,u5.get('baseline',{}).get('IC',1)):.0f}% over baseline) "
-            f"and Sharpe {u5.get('baseline',{}).get('SR',0):.2f}→{u5.get('robust_orthogonal',{}).get('SR',0):.2f} — "
-            f"genuine orthogonal mid-cap alpha. On <b>CSI300</b> it stays ≈ baseline "
-            f"({_num(u3.get('baseline',{}).get('IC'))}→{_num(u3.get('robust_orthogonal',{}).get('IC'))}): the "
-            f"large-cap OHLCV factors are fully redundant with Alpha158, so no orthogonal alpha survives to test. "
-            f"The result is universe-dependent — residual alpha exists in mid-caps, not large-caps.</p>")
+            f"and Sharpe {u5.get('baseline',{}).get('SR',0):.2f}→{u5.get('robust_orthogonal',{}).get('SR',0):.2f}. "
+            f"On <b>CSI300</b>, raw robust factors add <b>{d3_raw:+.4f}</b> IC but orthogonalization cuts the "
+            f"model to {_num(u3.get('robust_orthogonal',{}).get('IC'))} (<b>{d3_orth:+.4f}</b> vs baseline). "
+            "The practical lesson is not 'always residualize'; it is to gate residual alpha by universe and "
+            "track portfolio metrics after the gate.</p>")
 
     # --- V3 #4–#6 demonstrated on the existing run (scripts/08) ---
     v3_456_html = ""
@@ -663,6 +741,25 @@ def build_html(outputs: Path = None) -> Path:
         bef, aft = pc.get("before", {}), pc.get("after", {})
         s30 = pl.get("scenarios", {}).get("30", {})
         s50 = pl.get("scenarios", {}).get("50", {})
+        hidden_knobs = pc.get("hidden_knobs", [])
+        ic_top = ", ".join(pf.get("ic_only_top", [])) or "—"
+        port_top = ", ".join(pf.get("portfolio_top", [])) or "—"
+        leader = (pf.get("portfolio_top") or [""])[0]
+        leader_stats = cand.get(leader, {})
+        contract_html = (
+            "<p>The refreshed best Kimi factor passes the parameter-contract audit: every tunable it reads is "
+            "declared for Bayesian search, so there are <b>no hidden knobs</b> to auto-promote. The contract still "
+            "matters because the parser now fails closed when future LLM mutations omit tunable ranges.</p>"
+            f"<ul><li>valid fitness {_num(bef.get('valid_fit'),3)} → <b>{_num(aft.get('valid_fit'),3)}</b> "
+            "(no-op because no hidden knobs were found);</li>"
+            f"<li>test IC {_num(bef.get('test_ic'))} → {_num(aft.get('test_ic'))}.</li></ul>"
+            if not hidden_knobs else
+            "<p>The best Kimi factor left hidden knobs at hardcoded defaults that never entered Bayesian search. "
+            "The V3 prompt/parser auto-declares every such <code>parameters.get()</code> default into the search "
+            "space. Re-tuning just those hidden knobs via Optuna (30 trials, on validation):</p>"
+            f"<ul><li>valid fitness {_num(bef.get('valid_fit'),3)} → <b>{_num(aft.get('valid_fit'),3)}</b>;</li>"
+            f"<li>test IC {_num(bef.get('test_ic'))} → {_num(aft.get('test_ic'))}.</li></ul>"
+        )
         v3_456_html = (
             "<h2>Result 6 — V3 #4–#6 implemented/demonstrated (portfolio objective, prompt/parser contract, plateau stop)</h2>"
             "<p>The final three protocol items, exercised on the <i>existing</i> 300-iter run "
@@ -672,33 +769,20 @@ def build_html(outputs: Path = None) -> Path:
             "<p>Ranking by raw IC alone ignores trading cost and regime stability. Re-scoring the candidate pool by "
             "<code>IC + 0.5·min-yearly-IC − 0.4·turnover</code> (turnover = 1 − consecutive-date rank "
             "autocorrelation) changes the podium:</p>"
-            f"<ul><li><b>IC-only</b> top-3: <code>{', '.join(pf.get('ic_only_top', []))}</code> "
-            "(the high-IC Kimi elites).</li>"
-            f"<li><b>Portfolio-aware</b> top-3: <code>{', '.join(pf.get('portfolio_top', []))}</code> — "
-            f"<code>gk_lowvol</code> is promoted to #1 despite a lower IC "
-            f"({_num(cand.get('claude_gk_lowvol',{}).get('ic'))} vs ≈0.057) because its turnover is <b>4–5× lower</b> "
-            f"({cand.get('claude_gk_lowvol',{}).get('turnover',0):.3f} vs ≈0.05) and its worst-year IC is the best "
-            f"in the pool ({_num(cand.get('claude_gk_lowvol',{}).get('min_year_ic'))}).</li></ul>"
+            f"<ul><li><b>IC-only</b> top-3: <code>{ic_top}</code>.</li>"
+            f"<li><b>Portfolio-aware</b> top-3: <code>{port_top}</code>. The top-ranked candidate "
+            f"<code>{leader}</code> combines IC {_num(leader_stats.get('ic'))}, turnover "
+            f"{leader_stats.get('turnover',0):.3f}, and min-year IC {_num(leader_stats.get('min_year_ic'))}.</li></ul>"
             f"{ptable}"
             "<p class=\"small\">The seed scores worst (turnover ≈1.0 — it re-shuffles the whole cross-section daily). "
             "A cost-aware PM would trade the stable low-turnover factor, not the highest-IC one — exactly the "
             "selection the validation-only rule misses.</p>"
 
             "<h3>#6 — Tighter prompt/parser + parameter-contract enforcement</h3>"
-            "<p>The best Kimi factor left <b>4 of its 8 knobs</b> "
-            f"(<code>{', '.join(pc.get('hidden_knobs', []))}</code>) at hardcoded defaults that never entered "
-            "Bayesian search. The V3 prompt/parser now requires one mutation theme, no look-ahead, a CSI300/CSI500 "
+            "<p>The V3 prompt/parser now requires one mutation theme, no look-ahead, a CSI300/CSI500 "
             "microstructure rationale, and declared JSON ranges for every tunable; the parser also auto-declares "
-            "every <code>parameters.get()</code> default into the search space. Re-tuning just those hidden knobs "
-            "via Optuna (30 trials, on validation):</p>"
-            f"<ul><li>valid fitness {_num(bef.get('valid_fit'),3)} → <b>{_num(aft.get('valid_fit'),3)}</b> "
-            "(up, as expected — more degrees of freedom on the validation objective);</li>"
-            f"<li>but <b>test</b> IC {_num(bef.get('test_ic'))} → {_num(aft.get('test_ic'))} (essentially flat / "
-            "slightly worse).</li></ul>"
-            "<p class=\"small\"><b>Honest finding:</b> exposing the hidden knobs is necessary for reproducibility and "
-            "fair search, but tuning them <i>against validation alone</i> just re-runs the overfitting trap from "
-            "Result&nbsp;4 — the gain lands in validation, not test. The contract pays off only when paired with the "
-            "OOS-robust selection (#1): expose the knobs <i>and</i> select on train∧validation, not validation alone.</p>"
+            "every <code>parameters.get()</code> default into the search space.</p>"
+            f"{contract_html}"
 
             "<h3>#5 — Plateau-aware compute</h3>"
             f"<p>The validation frontier last improved at iteration <b>{pl.get('plateau_iter')}</b> of "
@@ -711,7 +795,42 @@ def build_html(outputs: Path = None) -> Path:
             f"<b>−{s50.get('saved_s',0)/3600:.1f}h ({100*s50.get('saved_frac',0):.0f}%)</b>.</li>"
             "</ul>"
             "<p class=\"small\">Wired as <code>EvolutionConfig.patience</code> (early-stop after N non-improving "
-            "iterations). At patience=30 this run reaches the identical best factor in <b>43% of the compute</b>.</p>")
+            f"iterations). At patience=30 this run saves <b>{100*s30.get('saved_frac',0):.0f}%</b> of the compute "
+            "while preserving the same best factor.</p>")
+
+    if ortho and ortho.get("universes"):
+        _u3o = ortho["universes"].get("csi300", {})
+        _u5o = ortho["universes"].get("csi500", {})
+        _d3r = _u3o.get("robust_raw", {}).get("IC", 0) - _u3o.get("baseline", {}).get("IC", 0)
+        _d3o = _u3o.get("robust_orthogonal", {}).get("IC", 0) - _u3o.get("baseline", {}).get("IC", 0)
+        _d5r = _u5o.get("robust_raw", {}).get("IC", 0) - _u5o.get("baseline", {}).get("IC", 0)
+        _d5o = _u5o.get("robust_orthogonal", {}).get("IC", 0) - _u5o.get("baseline", {}).get("IC", 0)
+        closed_loop_note = (
+            "And we closed the loop: OOS-robust + parsimony-penalized selection (Result 4) repairs the "
+            f"CSI300 IC degradation (<b>{_d3r:+.4f}</b> raw robust vs baseline), while per-date "
+            f"orthogonalization shows a smaller but positive CSI500 residual lift (<b>{_d5o:+.4f}</b>; raw "
+            f"robust is <b>{_d5r:+.4f}</b>). CSI300 orthogonalization is too aggressive in this run "
+            f"(<b>{_d3o:+.4f}</b>), so V3's lesson is universe-aware gating, not blind residualization. ")
+    elif v3result_html:
+        closed_loop_note = (
+            "And we closed the loop: applying OOS-robust + parsimony-penalized selection to the same run "
+            "repairs the CSI300 IC degradation, confirming the fault was validation-only selection rather "
+            "than Kimi connectivity. ")
+    else:
+        closed_loop_note = ""
+
+    if v3_456_html:
+        _pct30 = 100 * (v3_456.get("plateau", {}).get("scenarios", {}).get("30", {}).get("saved_frac", 0) or 0)
+        _hidden = v3_456.get("param_contract", {}).get("hidden_knobs", [])
+        _contract = ("the prompt/parser contract finds no hidden knobs in the refreshed best Kimi factor"
+                     if not _hidden else
+                     "the prompt/parser contract exposes hidden knobs for audit and tuning")
+        result6_note = (
+            f"Result 6 then exercises the final protocol items on the same run: a portfolio-aware objective "
+            f"re-ranks toward lower-turnover, regime-stable candidates; {_contract}; and plateau-aware "
+            f"early-stopping would save {_pct30:.0f}% of compute at patience=30. ")
+    else:
+        result6_note = ""
 
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>FactorEngine — Reproduction Report</title><style>{CSS}</style></head><body>
@@ -788,6 +907,8 @@ ceiling that needs the corpus. {result2_note}</p>
 <div class="fig">{_b64(eq_figs.get('csi300'))}</div>
 <div class="fig">{_b64(eq_figs.get('csi500'))}</div>
 
+{excess_plan_html}
+
 <h2>Parameter contract warning</h2>
 <p>A constructive insight, not a fatal flaw: the macro-agent learned useful structure but left some of its own
 knobs at hardcoded defaults that never entered the Bayesian micro-search.</p>
@@ -829,7 +950,7 @@ rank-inclusive fitness (Eq.5) is the robust choice.</li>
 
 <h2>Implemented V3 protocol</h2>
 <p>The run shows the bottleneck is <b>selection/integration</b>, not LLM connectivity.
-{"<b>All six items are now demonstrated on the existing run</b> (Results 4–6): robust selection removed the CSI300 degradation (#1–#2), orthogonalization beats the baseline on CSI500 (#3), and the portfolio objective / prompt-parser contract / plateau stop are exercised in Result 6 (#4–#6) — no LLM re-run needed." if v3_456_html else "<b>V3 status artifacts are incomplete for this build.</b> Run scripts/06_robust_elite.py, scripts/07_orthogonal_elite.py, and scripts/08_v3_4to6.py before rebuilding the report."}</p>
+{"<b>All six items are now demonstrated on the existing run</b> (Results 4–6): robust selection repairs the CSI300 IC degradation (#1–#2), orthogonal residual alpha remains positive on CSI500 but must be gated by universe (#3), and the portfolio objective / prompt-parser contract / plateau stop are exercised in Result 6 (#4–#6) — no LLM re-run needed." if v3_456_html else "<b>V3 status artifacts are incomplete for this build.</b> Run scripts/06_robust_elite.py, scripts/07_orthogonal_elite.py, and scripts/08_v3_4to6.py before rebuilding the report."}</p>
 {v3_html}
 
 <h2>Reproduction plan status</h2>
@@ -845,7 +966,7 @@ build time.</p>
 from Bayesian micro-optimization, a UCT tree with multi-island diversity, elite selection, and (this run) a
 <b>live Kimi LLM</b> agent driving idea-generation ({n_llm} accepted mutations) — and it reliably evolves a
 near-useless seed into a high-<i>validation</i>-fitness factor ({best_fit/seed_fit:.1f}×). The honest result is
-that {conclusion_verdict} {"And we closed the loop: OOS-robust + parsimony-penalized selection (Result 4) removed the CSI300 degradation, and per-date orthogonalization vs Alpha158 with a marginal-IC gate (Result 5) pushed the CSI500 model <b>above</b> the baseline (+44% IC) — confirming the fault was validation-only <i>selection/integration</i>, not the LLM or the factor logic, and that genuine orthogonal alpha exists in mid-caps." if ortho_html else ("And we closed the loop: applying OOS-robust + parsimony-penalized selection to the same run (Result 4) removed the CSI300 degradation, confirming the fault was validation-only <i>selection</i>, not the LLM or the factor logic." if v3result_html else "")}{" Result 6 then implements/demonstrates the final three protocol items on the same run: a portfolio-aware objective re-ranks toward a low-turnover, regime-stable factor; the prompt/parser contract auto-exposes every hidden knob (and shows that re-tuning them on validation alone does <b>not</b> help test — the contract only pays off paired with robust selection); and plateau-aware early-stopping reaches the identical best factor in 43% of the compute." if v3_456_html else ""} This is exactly the kind of finding a faithful reproduction should surface: the
+that {conclusion_verdict} {closed_loop_note}{result6_note}This is exactly the kind of finding a faithful reproduction should surface: the
 method runs end-to-end, and V3 shows the practical discipline needed to separate a high-validation factor from a
 durable one: robust elite selection, orthogonalized integration, portfolio-aware scoring, parser-enforced
 parameters, and plateau-aware compute.</p>

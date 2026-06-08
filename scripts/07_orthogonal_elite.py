@@ -34,14 +34,23 @@ def _candidates(evo):
     return cands
 
 
-def _model_test(panel, base_long, base_cols, extra_df=None, extra_cols=None, label="label"):
+def _benchmark(uni):
+    try:
+        from fe.data.qlib_loader import load_benchmark
+        return load_benchmark(uni)
+    except Exception as e:  # noqa: BLE001
+        print(f"  [benchmark unavailable for {uni}: {e}] -> equal-weight market")
+        return None
+
+
+def _model_test(panel, base_long, base_cols, uni, extra_df=None, extra_cols=None, label="label"):
     feat, cols = base_long, list(base_cols)
     if extra_df is not None and extra_cols:
         feat = base_long.merge(extra_df, on=["datetime", "instrument"], how="left")
         cols = cols + list(extra_cols)
-    mr = train_predict(panel, feat, cols, label=label)
+    mr = train_predict(panel, feat, cols, label=label, label_mode="date_demeaned")
     h = mr.test_metrics.headline()
-    bt = backtest(mr.preds, panel, split="test")
+    bt = backtest(mr.preds, panel, split="test", benchmark=_benchmark(uni))
     return {"IC": h["IC"], "RIC": h["RIC"], "AR": bt.metrics["AR"], "SR": bt.metrics["SR"],
             "n_features": len(cols)}
 
@@ -86,9 +95,9 @@ def main():
                 ortho_cols.append(on)
         ortho_wide = pd.concat(ortho_parts, axis=1).reset_index() if ortho_parts else None
 
-        base = _model_test(panel, base_long, base_cols)
-        rawm = _model_test(panel, base_long, base_cols, raw_wide, raw_cols)
-        orthm = (_model_test(panel, base_long, base_cols, ortho_wide, ortho_cols)
+        base = _model_test(panel, base_long, base_cols, uni)
+        rawm = _model_test(panel, base_long, base_cols, uni, raw_wide, raw_cols)
+        orthm = (_model_test(panel, base_long, base_cols, uni, ortho_wide, ortho_cols)
                  if ortho_wide is not None else base)
         out["universes"][uni] = {"baseline": base, "robust_raw": rawm,
                                  "robust_orthogonal": orthm, "gate": gate,
