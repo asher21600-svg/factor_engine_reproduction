@@ -77,7 +77,10 @@ def backtest(preds: pd.DataFrame, panel: pd.DataFrame,
     W = np.zeros((T, Nn))                      # target weights per day
 
     # For each rebalance day d, the tranche holds top-k for days d+1..d+holding.
-    tranche = 1.0 / N_SUBPORTFOLIOS
+    # Overlapping daily tranches = the holding period, so each funds 1/holding of the
+    # book (this EQUALS 1/N_SUBPORTFOLIOS at the paper's holding=5 default, and keeps the
+    # book fully invested for any holding — needed for the turnover sweep, scripts/11).
+    tranche = 1.0 / holding
     per_name = tranche / top_k
     buffer_k = max(top_k, int(round(top_k * (1.0 + hysteresis))))
     pred_arr = pred_wide.values

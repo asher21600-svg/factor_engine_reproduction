@@ -115,6 +115,26 @@ Run a cached-prediction backtest sweep before another expensive LLM run:
 4. **Combined best:** target turnover around 20-25×. If gross excess survives, a 3× cost cut
    mechanically moves CSI300 toward +4-5% net AER and CSI500 toward +6% net AER.
 
+## RESULT: positive net excess return achieved (`scripts/11_turnover_sweep.py` → `outputs/turnover_sweep.json`; report Result 9)
+The turnover sweep (EWM smoothing × holding × rank-band, on cached v4 preds) flips net AER **positive on both universes**:
+
+| Universe | default (5d) | best config | turnover | cost | **net AER** | IR | SR |
+|----------|--------------|-------------|----------|------|------------|----|----|
+| CSI300 | −1.28% | 20d hold (base) | 75→**20×** | 9.0%→**2.4%** | **+1.07%** | +0.22 | +0.26 |
+| CSI500 | −0.49% | 20d hold + A3 + band | 84→**22×** | 10.0%→**2.6%** | **+1.88%** | **+0.52** | +0.14 |
+
+- **Holding period is the dominant lever** (5→20d cuts turnover/cost ~4×). **EWM smoothing REJECTED**
+  (shaved gross faster than it cut cost once the hold handled turnover). **Rank band marginal** (helps
+  CSI500 only). A3 helps CSI500 not CSI300 (the universe-split persists).
+- Net AER is positive but **smaller than the naive +4–6% projection**: gross excess also *decays* with the
+  longer hold (CSI300 +7.8%→+3.5%), so net = gross − cost wins by a smaller margin. The gap to the index is
+  nonetheless **closed** (positive net excess return, net of A-share costs).
+- Backtest fix: `tranche = 1/holding` (renormalizes the book for any holding; equals the paper default at
+  holding=5). The whole chain now closes: positive IC → positive *gross* excess → cost was the killer →
+  longer holding → **positive net excess return.**
+- **Next refinements:** find the exact holding optimum (test 12/15/25/30) and implement `portfolio_v5`
+  (cost-net objective) so the search evolves factors that are tradeable net, not just gross-predictive.
+
 ## V5 objective
 `portfolio_v4` optimizes a gross top-decile excess-return proxy with turnover/complexity
 penalties. The next evolution objective should be **`portfolio_v5` = gross excess − real
