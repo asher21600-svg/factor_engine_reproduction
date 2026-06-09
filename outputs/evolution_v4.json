@@ -1,0 +1,986 @@
+{
+  "panel": "csi300",
+  "config": {
+    "iterations": 12,
+    "islands": 2,
+    "trials": 6,
+    "use_llm": false,
+    "llm_model": null,
+    "require_llm": false,
+    "objective": "portfolio_v4",
+    "elite_rule": "robust",
+    "patience": 50
+  },
+  "elapsed_s": 1262.1,
+  "n_evals": 74,
+  "n_llm": 0,
+  "llm": {},
+  "seed_reward": -1.8835,
+  "seed_fitness": 0.07233,
+  "seed_score_components": {
+    "objective": "portfolio_v4",
+    "ann_spread_valid": -0.8011454302997375,
+    "ann_spread_train": -0.3036453446520107,
+    "min_year_ic": -0.0019253821893184858,
+    "turnover": 0.9863337497804815,
+    "n_params": 3,
+    "n_hidden": 3,
+    "sign_penalty": 0.2658957426646773,
+    "valid_combined": 0.10169598982547484,
+    "valid_fitness": 0.07233348595048404
+  },
+  "best_reward": 0.31262,
+  "best_fitness": 0.47481,
+  "best_score_components": {
+    "objective": "portfolio_v3",
+    "valid_combined": 0.41304682892833083,
+    "train_combined": 0.08945547378319782,
+    "valid_fitness": 0.47480661635208854,
+    "train_fitness": 0.10239197911829162,
+    "train_ic": 0.0026743237812642665,
+    "valid_ic": 0.04369561298377503,
+    "valid_ric": 0.09019549866064411,
+    "min_year_ic": 0.0394051318477175,
+    "turnover": 0.03404335673391545,
+    "n_params": 1,
+    "n_hidden": 0,
+    "stability_bonus": 0.078810263695435,
+    "turnover_penalty": 0.013617342693566181,
+    "complexity_penalty": 0.02,
+    "sign_penalty": 0.0
+  },
+  "best_transforms": [
+    "proposal_gk_lowvol",
+    "proposal_overnight_intraday"
+  ],
+  "best_params": {
+    "w1": 0.6199,
+    "w2": 0.0165,
+    "w3": 0.1873,
+    "k": 28
+  },
+  "best_idea": "[LLM idea: gk_lowvol]",
+  "best_code": "\ndef factor(pricing_data, parameters):\n    eps = parameters.get(\"epsilon\", 1e-9)\n    if isinstance(pricing_data, pd.DataFrame):\n        df = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    df = df.select(['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']).with_columns([\n        pl.col('datetime').cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ]).sort(['instrument', 'datetime'])\n\n    k = parameters.get(\"k\", 10)\n    df = df.with_columns(\n        (0.5 * (pl.col('high') / (pl.col('low') + eps)).log() ** 2\n         - (2.0 * 0.6931 - 1.0) * (pl.col('close') / (pl.col('open') + eps)).log() ** 2).alias('gk'))\n    df = df.with_columns(\n        pl.col('gk').rolling_mean(window_size=k, min_periods=2).over('instrument').alias('gk_k'))\n    df = df.with_columns(\n        (-(pl.col('gk_k').rank().over('datetime') / (pl.col('gk_k').count().over('datetime') + 1) - 0.5)).alias('raw'))\n    df = df.with_columns(\n        ((pl.col('raw') - pl.col('raw').mean().over('datetime')) /\n         (pl.col('raw').std(ddof=0).over('datetime') + eps)).alias('Factor'))\n    out = df.select(['instrument', 'datetime', 'Factor']).filter(\n        pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    return out\n\n",
+  "elite": [
+    {
+      "name": "node_19",
+      "code": "\ndef factor(pricing_data, parameters):\n    eps = parameters.get(\"epsilon\", 1e-9)\n    if isinstance(pricing_data, pd.DataFrame):\n        df = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    df = df.select(['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']).with_columns([\n        pl.col('datetime').cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ]).sort(['instrument', 'datetime'])\n\n    k = parameters.get(\"k\", 10)\n    df = df.with_columns(\n        (0.5 * (pl.col('high') / (pl.col('low') + eps)).log() ** 2\n         - (2.0 * 0.6931 - 1.0) * (pl.col('close') / (pl.col('open') + eps)).log() ** 2).alias('gk'))\n    df = df.with_columns(\n        pl.col('gk').rolling_mean(window_size=k, min_periods=2).over('instrument').alias('gk_k'))\n    df = df.with_columns(\n        (-(pl.col('gk_k').rank().over('datetime') / (pl.col('gk_k').count().over('datetime') + 1) - 0.5)).alias('raw'))\n    df = df.with_columns(\n        ((pl.col('raw') - pl.col('raw').mean().over('datetime')) /\n         (pl.col('raw').std(ddof=0).over('datetime') + eps)).alias('Factor'))\n    out = df.select(['instrument', 'datetime', 'Factor']).filter(\n        pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    return out\n\n",
+      "params": {
+        "w1": 0.6199,
+        "w2": 0.0165,
+        "w3": 0.1873,
+        "k": 28
+      },
+      "fitness": 0.47481,
+      "robust_score": 0.31262,
+      "ic_train": 0.00267,
+      "ic_valid": 0.0437,
+      "ic_test_report_only": 0.01536,
+      "turnover": 0.03404,
+      "min_year_ic": 0.03941,
+      "n_params": 1,
+      "n_undeclared": 0
+    },
+    {
+      "name": "node_9",
+      "code": "\ndef factor(pricing_data, parameters):\n    w1 = parameters.get(\"w1\", 0.25)\n    w2 = parameters.get(\"w2\", 0.25)\n    w3 = parameters.get(\"w3\", 0.50)\n    EPSILON = parameters.get(\"epsilon\", 1e-9)\n    vol_window = parameters.get(\"vol_window\", 20)\n    smoothing_window = parameters.get(\"smoothing_window\", 5)\n\n    if isinstance(pricing_data, pd.DataFrame):\n        df_pl = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df_pl = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n\n    df_pl = df_pl.select(\n        ['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']\n    ).with_columns([\n        pl.col(\"datetime\").cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ])\n\n    daily_range_expr = pl.col('high') - pl.col('low')\n    sf1_expr = -pl.col('volume') * (pl.col('close') - (pl.col('high') + pl.col('low')) / 2.0) / (daily_range_expr + EPSILON)\n    sf2_expr = -pl.col('volume') * (pl.col('high') - pl.col('open')) / (daily_range_expr + EPSILON)\n    sf3_expr = pl.col('volume') * (pl.min_horizontal('open', 'close') - pl.col('low')) / (daily_range_expr + EPSILON)\n\n    df_factor = df_pl.with_columns(\n        z1=(sf1_expr - sf1_expr.mean().over('datetime')) / (sf1_expr.std(ddof=0).over('datetime') + EPSILON),\n        z2=(sf2_expr - sf2_expr.mean().over('datetime')) / (sf2_expr.std(ddof=0).over('datetime') + EPSILON),\n        z3=(sf3_expr - sf3_expr.mean().over('datetime')) / (sf3_expr.std(ddof=0).over('datetime') + EPSILON),\n    ).with_columns(\n        (w1 * pl.col('z1') + w2 * pl.col('z2') + w3 * pl.col('z3')).alias('raw_f')\n    )\n\n    df_factor = df_factor.sort(['instrument','datetime']).with_columns(\n        pl.col('raw_f').ewm_mean(span=smoothing_window, min_periods=1).over('instrument').alias('smoothed_f'))\n    df_factor = df_factor.with_columns(\n        ((pl.col('smoothed_f') - pl.col('smoothed_f').mean().over('datetime')) /\n         (pl.col('smoothed_f').std(ddof=0).over('datetime') + EPSILON)).alias('Factor'))\n    df_factor = df_factor.sort(['instrument','datetime']).with_columns(\n        (pl.col('Factor') / (pl.col('Factor').rolling_std(window_size=vol_window, min_periods=2).over('instrument') + EPSILON)).alias('Factor'))\n    df_tf = df_factor.select(['instrument', 'datetime', 'Factor'])\n    df_tf = df_tf.filter(pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    df_tf = df_tf.with_columns(pl.col(\"datetime\").cast(pl.Date).alias(\"datetime\"))\n    return df_tf\n",
+      "params": {
+        "w1": 0.0358,
+        "w2": 0.7713,
+        "w3": 0.0795,
+        "smoothing_window": 9,
+        "vol_window": 35
+      },
+      "fitness": 0.45722,
+      "robust_score": 0.24774,
+      "ic_train": 0.01464,
+      "ic_valid": 0.04274,
+      "ic_test_report_only": 0.00563,
+      "turnover": 0.03882,
+      "min_year_ic": 0.03632,
+      "n_params": 5,
+      "n_undeclared": 0
+    },
+    {
+      "name": "node_10",
+      "code": "\ndef factor(pricing_data, parameters):\n    w1 = parameters.get(\"w1\", 0.25)\n    w2 = parameters.get(\"w2\", 0.25)\n    w3 = parameters.get(\"w3\", 0.50)\n    EPSILON = parameters.get(\"epsilon\", 1e-9)\n    smoothing_window = parameters.get(\"smoothing_window\", 5)\n\n    if isinstance(pricing_data, pd.DataFrame):\n        df_pl = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df_pl = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n\n    df_pl = df_pl.select(\n        ['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']\n    ).with_columns([\n        pl.col(\"datetime\").cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ])\n\n    daily_range_expr = pl.col('high') - pl.col('low')\n    sf1_expr = -pl.col('volume') * (pl.col('close') - (pl.col('high') + pl.col('low')) / 2.0) / (daily_range_expr + EPSILON)\n    sf2_expr = -pl.col('volume') * (pl.col('high') - pl.col('open')) / (daily_range_expr + EPSILON)\n    sf3_expr = pl.col('volume') * (pl.min_horizontal('open', 'close') - pl.col('low')) / (daily_range_expr + EPSILON)\n\n    df_factor = df_pl.with_columns(\n        z1=(sf1_expr - sf1_expr.mean().over('datetime')) / (sf1_expr.std(ddof=0).over('datetime') + EPSILON),\n        z2=(sf2_expr - sf2_expr.mean().over('datetime')) / (sf2_expr.std(ddof=0).over('datetime') + EPSILON),\n        z3=(sf3_expr - sf3_expr.mean().over('datetime')) / (sf3_expr.std(ddof=0).over('datetime') + EPSILON),\n    ).with_columns(\n        (w1 * pl.col('z1') + w2 * pl.col('z2') + w3 * pl.col('z3')).alias('raw_f')\n    )\n\n    df_factor = df_factor.sort(['instrument','datetime']).with_columns(\n        pl.col('raw_f').ewm_mean(span=smoothing_window, min_periods=1).over('instrument').alias('smoothed_f'))\n    df_factor = df_factor.with_columns(\n        ((pl.col('smoothed_f') - pl.col('smoothed_f').mean().over('datetime')) /\n         (pl.col('smoothed_f').std(ddof=0).over('datetime') + EPSILON)).alias('Factor'))\n    df_tf = df_factor.select(['instrument', 'datetime', 'Factor'])\n    df_tf = df_tf.filter(pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    df_tf = df_tf.with_columns(pl.col(\"datetime\").cast(pl.Date).alias(\"datetime\"))\n    return df_tf\n",
+      "params": {
+        "w1": 0.5204,
+        "w2": 0.6704,
+        "w3": 0.122,
+        "smoothing_window": 7
+      },
+      "fitness": 0.42647,
+      "robust_score": 0.17293,
+      "ic_train": 0.01205,
+      "ic_valid": 0.03625,
+      "ic_test_report_only": -0.00013,
+      "turnover": 0.2181,
+      "min_year_ic": 0.02333,
+      "n_params": 4,
+      "n_undeclared": 0
+    },
+    {
+      "name": "node_2",
+      "code": "\ndef factor(pricing_data, parameters):\n    eps = parameters.get(\"epsilon\", 1e-9)\n    if isinstance(pricing_data, pd.DataFrame):\n        df = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    df = df.select(['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']).with_columns([\n        pl.col('datetime').cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ]).sort(['instrument', 'datetime'])\n\n    k = parameters.get(\"k\", 5)\n    df = df.with_columns([\n        (pl.col('open') / pl.col('close').shift(1).over('instrument') - 1.0).alias('overnight'),\n        (pl.col('close') / pl.col('open') - 1.0).alias('intraday'),\n    ])\n    df = df.with_columns([\n        pl.col('overnight').rolling_mean(window_size=k, min_periods=2).over('instrument').alias('on_k'),\n        pl.col('intraday').rolling_mean(window_size=k, min_periods=2).over('instrument').alias('in_k'),\n    ])\n    df = df.with_columns((pl.col('on_k') - pl.col('in_k')).alias('raw'))\n    df = df.with_columns(\n        ((pl.col('raw') - pl.col('raw').mean().over('datetime')) /\n         (pl.col('raw').std(ddof=0).over('datetime') + eps)).alias('Factor'))\n    out = df.select(['instrument', 'datetime', 'Factor']).filter(\n        pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    return out\n\n",
+      "params": {
+        "w1": 0.9228,
+        "w2": 0.5408,
+        "w3": 0.526,
+        "k": 13
+      },
+      "fitness": 0.37483,
+      "robust_score": 0.14886,
+      "ic_train": 0.00618,
+      "ic_valid": 0.0308,
+      "ic_test_report_only": 0.00132,
+      "turnover": 0.30917,
+      "min_year_ic": 0.02958,
+      "n_params": 1,
+      "n_undeclared": 0
+    },
+    {
+      "name": "node_15",
+      "code": "\ndef factor(pricing_data, parameters):\n    eps = parameters.get(\"epsilon\", 1e-9)\n    if isinstance(pricing_data, pd.DataFrame):\n        df = pl.from_pandas(pricing_data.reset_index()).rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    else:\n        df = pricing_data.rename({\n            '$close': 'close', '$open': 'open', '$high': 'high',\n            '$low': 'low', '$volume': 'volume'})\n    df = df.select(['instrument', 'datetime', 'open', 'high', 'low', 'close', 'volume']).with_columns([\n        pl.col('datetime').cast(pl.Date),\n        pl.col(['open', 'high', 'low', 'close', 'volume']).cast(pl.Float64),\n    ]).sort(['instrument', 'datetime'])\n\n    k = parameters.get(\"k\", 5)\n    df = df.with_columns([\n        (pl.col('close') / pl.col('close').shift(1).over('instrument') - 1.0).alias('ret1'),\n        (pl.col('volume') * pl.col('close')).alias('turnover'),\n    ])\n    df = df.with_columns(\n        (pl.col('ret1').abs() / (pl.col('turnover') + eps)).rolling_mean(window_size=k, min_periods=2).over('instrument').alias('illiq'))\n    df = df.with_columns([\n        (pl.col('close') / pl.col('close').shift(k).over('instrument') - 1.0).alias('mom_k'),\n        (pl.col('illiq').rank().over('datetime') / (pl.col('illiq').count().over('datetime') + 1)).alias('illiq_r'),\n    ])\n    df = df.with_columns((-pl.col('mom_k') * pl.col('illiq_r')).alias('raw'))\n    df = df.with_columns(\n        ((pl.col('raw') - pl.col('raw').mean().over('datetime')) /\n         (pl.col('raw').std(ddof=0).over('datetime') + eps)).alias('Factor'))\n    out = df.select(['instrument', 'datetime', 'Factor']).filter(\n        pl.col('Factor').is_not_nan() & pl.col('Factor').is_finite())\n    return out\n\n",
+      "params": {
+        "w1": 0.9083,
+        "w2": 0.0506,
+        "w3": 0.3268,
+        "k": 16
+      },
+      "fitness": 0.38005,
+      "robust_score": 0.13087,
+      "ic_train": 0.00967,
+      "ic_valid": 0.03166,
+      "ic_test_report_only": 0.00269,
+      "turnover": 0.34189,
+      "min_year_ic": 0.03001,
+      "n_params": 1,
+      "n_undeclared": 0
+    }
+  ],
+  "elite_meta": {
+    "rule": "robust_v3",
+    "candidates": 9,
+    "selected": [
+      "node_19",
+      "node_9",
+      "node_10",
+      "node_2",
+      "node_15"
+    ]
+  },
+  "history": [
+    [
+      1,
+      0.14885683146944215
+    ],
+    [
+      2,
+      0.14885683146944215
+    ],
+    [
+      3,
+      0.14885683146944215
+    ],
+    [
+      4,
+      0.17293267006301322
+    ],
+    [
+      5,
+      0.17293267006301322
+    ],
+    [
+      6,
+      0.2477355888536831
+    ],
+    [
+      7,
+      0.2477355888536831
+    ],
+    [
+      8,
+      0.2477355888536831
+    ],
+    [
+      9,
+      0.2477355888536831
+    ],
+    [
+      10,
+      0.2477355888536831
+    ],
+    [
+      11,
+      0.2477355888536831
+    ],
+    [
+      12,
+      0.31262364011488986
+    ]
+  ],
+  "pool": [
+    {
+      "id": 0,
+      "parent": null,
+      "island": 0,
+      "depth": 0,
+      "transforms": [],
+      "reward": -1.8835,
+      "fitness": 0.07233,
+      "score_components": {
+        "objective": "portfolio_v4",
+        "ann_spread_valid": -0.8011454302997375,
+        "ann_spread_train": -0.3036453446520107,
+        "min_year_ic": -0.0019253821893184858,
+        "turnover": 0.9863337497804815,
+        "n_params": 3,
+        "n_hidden": 3,
+        "sign_penalty": 0.2658957426646773,
+        "valid_combined": 0.10169598982547484,
+        "valid_fitness": 0.07233348595048404
+      },
+      "idea": "initial seed program",
+      "change": "",
+      "params": {},
+      "valid": true
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "proposal_overnight_intraday"
+      ],
+      "reward": 0.14886,
+      "fitness": 0.37483,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.35656039384673577,
+        "train_combined": 0.0827966849843854,
+        "valid_fitness": 0.3748314329384013,
+        "train_fitness": 0.08755801500061267,
+        "train_ic": 0.006184806243992364,
+        "valid_ic": 0.030796218490098413,
+        "valid_ric": 0.05982216730196947,
+        "min_year_ic": 0.029580002156142104,
+        "turnover": 0.3091747442538003,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": 0.05916000431228421,
+        "turnover_penalty": 0.12366989770152013,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.0
+      },
+      "idea": "[LLM idea: overnight_intraday]",
+      "change": "propose overnight_intraday",
+      "params": {
+        "w1": 0.9228,
+        "w2": 0.5408,
+        "w3": 0.526,
+        "k": 13
+      },
+      "valid": true
+    },
+    {
+      "id": 4,
+      "parent": 2,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "proposal_overnight_intraday",
+        "proposal_volscaled_momentum"
+      ],
+      "reward": -0.96433,
+      "fitness": -0.29337,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": -0.2928666740979036,
+        "train_combined": -0.16710644273841863,
+        "valid_fitness": -0.2933666812920753,
+        "train_fitness": -0.19771712102401043,
+        "train_ic": -0.016208274288802296,
+        "valid_ic": -0.022508315944388617,
+        "valid_ric": -0.05241057938537604,
+        "min_year_ic": -0.028205502674282693,
+        "turnover": 0.6005860446209068,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": -0.056411005348565385,
+        "turnover_penalty": 0.24023441784836272,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.3548211587707521
+      },
+      "idea": "[LLM idea: volscaled_momentum]",
+      "change": "propose volscaled_momentum",
+      "params": {
+        "w1": 0.2098,
+        "w2": 0.0138,
+        "w3": 0.9421,
+        "k": 8
+      },
+      "valid": true
+    },
+    {
+      "id": 6,
+      "parent": 2,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "proposal_overnight_intraday",
+        "proposal_volscaled_momentum"
+      ],
+      "reward": -0.95369,
+      "fitness": -0.30574,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": -0.2908456895755839,
+        "train_combined": -0.14793431250956204,
+        "valid_fitness": -0.3057367289787798,
+        "train_fitness": -0.17403564649352535,
+        "train_ic": -0.013511575946342474,
+        "valid_ic": -0.02439636318877432,
+        "valid_ric": -0.054506918325794254,
+        "min_year_ic": -0.02985568519355043,
+        "turnover": 0.5602921201715381,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": -0.05971137038710086,
+        "turnover_penalty": 0.22411684806861523,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.3590138366515885
+      },
+      "idea": "[LLM idea: volscaled_momentum]",
+      "change": "propose volscaled_momentum",
+      "params": {
+        "w1": 0.6653,
+        "w2": 0.9267,
+        "w3": 0.4974,
+        "k": 9
+      },
+      "valid": true
+    },
+    {
+      "id": 8,
+      "parent": 6,
+      "island": 0,
+      "depth": 3,
+      "transforms": [
+        "proposal_amihud_reversal",
+        "proposal_overnight_intraday",
+        "proposal_volscaled_momentum"
+      ],
+      "reward": 0.0742,
+      "fitness": 0.35039,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.3306600378218625,
+        "train_combined": 0.08488159985918357,
+        "valid_fitness": 0.35038779538309295,
+        "train_fitness": 0.09255867822648951,
+        "train_ic": 0.00880619994091428,
+        "valid_ic": 0.029987418254061,
+        "valid_ric": 0.05794285773177112,
+        "min_year_ic": 0.027393584518397737,
+        "turnover": 0.4516132582178126,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": 0.05478716903679547,
+        "turnover_penalty": 0.18064530328712505,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.0
+      },
+      "idea": "[LLM idea: amihud_reversal]",
+      "change": "propose amihud_reversal",
+      "params": {
+        "w1": 0.962,
+        "w2": 0.0421,
+        "w3": 0.4194,
+        "k": 12
+      },
+      "valid": true
+    },
+    {
+      "id": 9,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "volscale"
+      ],
+      "reward": 0.24774,
+      "fitness": 0.45722,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.41210204317270727,
+        "train_combined": 0.14216007668831868,
+        "valid_fitness": 0.45721580486232977,
+        "train_fitness": 0.1561753062702798,
+        "train_ic": 0.014637648897850321,
+        "valid_ic": 0.042743271683845334,
+        "valid_ric": 0.05871760403068758,
+        "min_year_ic": 0.03631815769802052,
+        "turnover": 0.03882221199272595,
+        "n_params": 5,
+        "n_hidden": 0,
+        "stability_bonus": 0.07263631539604104,
+        "turnover_penalty": 0.015528884797090381,
+        "complexity_penalty": 0.1,
+        "sign_penalty": 0.0
+      },
+      "idea": "[migrant from island 1] Risk-normalize the factor by its trailing per-instrument volatility (scale by 1/rolling-std) \u2014 stabilizes exposure across regimes.",
+      "change": "migration",
+      "params": {
+        "w1": 0.0358,
+        "w2": 0.7713,
+        "w3": 0.0795,
+        "smoothing_window": 9,
+        "vol_window": 35
+      },
+      "valid": true
+    },
+    {
+      "id": 10,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "ewm",
+        "midprice"
+      ],
+      "reward": 0.17293,
+      "fitness": 0.42647,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.40350162622134295,
+        "train_combined": 0.15907279048254724,
+        "valid_fitness": 0.4264747514457238,
+        "train_fitness": 0.17705497900685951,
+        "train_ic": 0.012054931614776236,
+        "valid_ic": 0.036252036978315166,
+        "valid_ric": 0.06230601858546217,
+        "min_year_ic": 0.02333115989584964,
+        "turnover": 0.2180957496689273,
+        "n_params": 4,
+        "n_hidden": 0,
+        "stability_bonus": 0.04666231979169928,
+        "turnover_penalty": 0.08723829986757092,
+        "complexity_penalty": 0.08,
+        "sign_penalty": 0.0
+      },
+      "idea": "[migrant from island 1] Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "migration",
+      "params": {
+        "w1": 0.5204,
+        "w2": 0.6704,
+        "w3": 0.122,
+        "smoothing_window": 7
+      },
+      "valid": true
+    },
+    {
+      "id": 11,
+      "parent": 0,
+      "island": 0,
+      "depth": 1,
+      "transforms": [
+        "midprice"
+      ],
+      "reward": -0.019,
+      "fitness": 0.38285,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.3621584210192328,
+        "train_combined": 0.14055517584662774,
+        "valid_fitness": 0.3828511159314847,
+        "train_fitness": 0.16904176898226056,
+        "train_ic": 0.011699014300468389,
+        "valid_ic": 0.032760446895136325,
+        "valid_ric": 0.05745796745273195,
+        "min_year_ic": 0.017788439447155805,
+        "turnover": 0.6425396140858959,
+        "n_params": 3,
+        "n_hidden": 0,
+        "stability_bonus": 0.03557687889431161,
+        "turnover_penalty": 0.25701584563435836,
+        "complexity_penalty": 0.06,
+        "sign_penalty": 0.0
+      },
+      "idea": "[migrant from island 1] Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "migration",
+      "params": {
+        "w1": 0.2729,
+        "w2": 0.7877,
+        "w3": 0.0532
+      },
+      "valid": true
+    },
+    {
+      "id": 16,
+      "parent": 9,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "proposal_overnight_intraday",
+        "volscale"
+      ],
+      "reward": 0.13752,
+      "fitness": 0.40905,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.37697833440799366,
+        "train_combined": 0.10595933363551827,
+        "valid_fitness": 0.4090481488921377,
+        "train_fitness": 0.12344859321511553,
+        "train_ic": 0.010520304752091357,
+        "valid_ic": 0.03413132112054883,
+        "valid_ric": 0.06359627629169702,
+        "min_year_ic": 0.03267831334130972,
+        "turnover": 0.4071527417930949,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": 0.06535662668261943,
+        "turnover_penalty": 0.16286109671723797,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.0
+      },
+      "idea": "[LLM idea: overnight_intraday]",
+      "change": "propose overnight_intraday",
+      "params": {
+        "w1": 0.004,
+        "w2": 0.2436,
+        "w3": 0.9231,
+        "smoothing_window": 20,
+        "vol_window": 9,
+        "k": 10
+      },
+      "valid": true
+    },
+    {
+      "id": 18,
+      "parent": 10,
+      "island": 0,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "proposal_pv_divergence"
+      ],
+      "reward": -0.29213,
+      "fitness": 0.10503,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.098631575104801,
+        "train_combined": 0.015095548935500792,
+        "valid_fitness": 0.10503101007025979,
+        "train_fitness": 0.059649173419616425,
+        "train_ic": 0.005571003755279983,
+        "valid_ic": 0.01625911900525917,
+        "valid_ric": 0.007900525655260783,
+        "min_year_ic": 0.013160429274776252,
+        "turnover": 0.8987391862807421,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": 0.026320858549552503,
+        "turnover_penalty": 0.35949567451229686,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.0
+      },
+      "idea": "[LLM idea: pv_divergence]",
+      "change": "propose pv_divergence",
+      "params": {
+        "w1": 0.6625,
+        "w2": 0.1712,
+        "w3": 0.7496,
+        "smoothing_window": 9,
+        "k": 16
+      },
+      "valid": true
+    },
+    {
+      "id": 1,
+      "parent": null,
+      "island": 1,
+      "depth": 0,
+      "transforms": [],
+      "reward": -1.8835,
+      "fitness": 0.07233,
+      "score_components": {
+        "objective": "portfolio_v4",
+        "ann_spread_valid": -0.8011454302997375,
+        "ann_spread_train": -0.3036453446520107,
+        "min_year_ic": -0.0019253821893184858,
+        "turnover": 0.9863337497804815,
+        "n_params": 3,
+        "n_hidden": 3,
+        "sign_penalty": 0.2658957426646773,
+        "valid_combined": 0.10169598982547484,
+        "valid_fitness": 0.07233348595048404
+      },
+      "idea": "initial seed program",
+      "change": "",
+      "params": {},
+      "valid": true
+    },
+    {
+      "id": 3,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "midprice"
+      ],
+      "reward": -0.019,
+      "fitness": 0.38285,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.3621584210192328,
+        "train_combined": 0.14055517584662774,
+        "valid_fitness": 0.3828511159314847,
+        "train_fitness": 0.16904176898226056,
+        "train_ic": 0.011699014300468389,
+        "valid_ic": 0.032760446895136325,
+        "valid_ric": 0.05745796745273195,
+        "min_year_ic": 0.017788439447155805,
+        "turnover": 0.6425396140858959,
+        "n_params": 3,
+        "n_hidden": 0,
+        "stability_bonus": 0.03557687889431161,
+        "turnover_penalty": 0.25701584563435836,
+        "complexity_penalty": 0.06,
+        "sign_penalty": 0.0
+      },
+      "idea": "Measure close relative to the day's MID-price instead of the low \u2014 a sign-symmetric, unbiased read of intraday pressure.",
+      "change": "close-low -> close-mid",
+      "params": {
+        "w1": 0.2729,
+        "w2": 0.7877,
+        "w3": 0.0532
+      },
+      "valid": true
+    },
+    {
+      "id": 5,
+      "parent": 3,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "ewm",
+        "midprice"
+      ],
+      "reward": 0.17293,
+      "fitness": 0.42647,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.40350162622134295,
+        "train_combined": 0.15907279048254724,
+        "valid_fitness": 0.4264747514457238,
+        "train_fitness": 0.17705497900685951,
+        "train_ic": 0.012054931614776236,
+        "valid_ic": 0.036252036978315166,
+        "valid_ric": 0.06230601858546217,
+        "min_year_ic": 0.02333115989584964,
+        "turnover": 0.2180957496689273,
+        "n_params": 4,
+        "n_hidden": 0,
+        "stability_bonus": 0.04666231979169928,
+        "turnover_penalty": 0.08723829986757092,
+        "complexity_penalty": 0.08,
+        "sign_penalty": 0.0
+      },
+      "idea": "Add EWM temporal smoothing of the combined factor per instrument, then re-standardize cross-sectionally \u2014 denoise a persistent signal.",
+      "change": "+ EWM smoothing",
+      "params": {
+        "w1": 0.5204,
+        "w2": 0.6704,
+        "w3": 0.122,
+        "smoothing_window": 7
+      },
+      "valid": true
+    },
+    {
+      "id": 7,
+      "parent": 5,
+      "island": 1,
+      "depth": 3,
+      "transforms": [
+        "ewm",
+        "midprice",
+        "volscale"
+      ],
+      "reward": 0.24774,
+      "fitness": 0.45722,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.41210204317270727,
+        "train_combined": 0.14216007668831868,
+        "valid_fitness": 0.45721580486232977,
+        "train_fitness": 0.1561753062702798,
+        "train_ic": 0.014637648897850321,
+        "valid_ic": 0.042743271683845334,
+        "valid_ric": 0.05871760403068758,
+        "min_year_ic": 0.03631815769802052,
+        "turnover": 0.03882221199272595,
+        "n_params": 5,
+        "n_hidden": 0,
+        "stability_bonus": 0.07263631539604104,
+        "turnover_penalty": 0.015528884797090381,
+        "complexity_penalty": 0.1,
+        "sign_penalty": 0.0
+      },
+      "idea": "Risk-normalize the factor by its trailing per-instrument volatility (scale by 1/rolling-std) \u2014 stabilizes exposure across regimes.",
+      "change": "+ vol scaling",
+      "params": {
+        "w1": 0.0358,
+        "w2": 0.7713,
+        "w3": 0.0795,
+        "smoothing_window": 9,
+        "vol_window": 35
+      },
+      "valid": true
+    },
+    {
+      "id": 12,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "proposal_overnight_intraday"
+      ],
+      "reward": 0.14886,
+      "fitness": 0.37483,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.35656039384673577,
+        "train_combined": 0.0827966849843854,
+        "valid_fitness": 0.3748314329384013,
+        "train_fitness": 0.08755801500061267,
+        "train_ic": 0.006184806243992364,
+        "valid_ic": 0.030796218490098413,
+        "valid_ric": 0.05982216730196947,
+        "min_year_ic": 0.029580002156142104,
+        "turnover": 0.3091747442538003,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": 0.05916000431228421,
+        "turnover_penalty": 0.12366989770152013,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.0
+      },
+      "idea": "[migrant from island 0] [LLM idea: overnight_intraday]",
+      "change": "migration",
+      "params": {
+        "w1": 0.9228,
+        "w2": 0.5408,
+        "w3": 0.526,
+        "k": 13
+      },
+      "valid": true
+    },
+    {
+      "id": 13,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "proposal_amihud_reversal",
+        "proposal_overnight_intraday",
+        "proposal_volscaled_momentum"
+      ],
+      "reward": 0.0742,
+      "fitness": 0.35039,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.3306600378218625,
+        "train_combined": 0.08488159985918357,
+        "valid_fitness": 0.35038779538309295,
+        "train_fitness": 0.09255867822648951,
+        "train_ic": 0.00880619994091428,
+        "valid_ic": 0.029987418254061,
+        "valid_ric": 0.05794285773177112,
+        "min_year_ic": 0.027393584518397737,
+        "turnover": 0.4516132582178126,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": 0.05478716903679547,
+        "turnover_penalty": 0.18064530328712505,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.0
+      },
+      "idea": "[migrant from island 0] [LLM idea: amihud_reversal]",
+      "change": "migration",
+      "params": {
+        "w1": 0.962,
+        "w2": 0.0421,
+        "w3": 0.4194,
+        "k": 12
+      },
+      "valid": true
+    },
+    {
+      "id": 14,
+      "parent": 1,
+      "island": 1,
+      "depth": 1,
+      "transforms": [
+        "proposal_overnight_intraday",
+        "proposal_volscaled_momentum"
+      ],
+      "reward": -0.95369,
+      "fitness": -0.30574,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": -0.2908456895755839,
+        "train_combined": -0.14793431250956204,
+        "valid_fitness": -0.3057367289787798,
+        "train_fitness": -0.17403564649352535,
+        "train_ic": -0.013511575946342474,
+        "valid_ic": -0.02439636318877432,
+        "valid_ric": -0.054506918325794254,
+        "min_year_ic": -0.02985568519355043,
+        "turnover": 0.5602921201715381,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": -0.05971137038710086,
+        "turnover_penalty": 0.22411684806861523,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.3590138366515885
+      },
+      "idea": "[migrant from island 0] [LLM idea: volscaled_momentum]",
+      "change": "migration",
+      "params": {
+        "w1": 0.6653,
+        "w2": 0.9267,
+        "w3": 0.4974,
+        "k": 9
+      },
+      "valid": true
+    },
+    {
+      "id": 15,
+      "parent": 12,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "proposal_amihud_reversal",
+        "proposal_overnight_intraday"
+      ],
+      "reward": 0.13087,
+      "fitness": 0.38005,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.3482367781475599,
+        "train_combined": 0.08018176727400542,
+        "valid_fitness": 0.380047772725429,
+        "train_fitness": 0.09403534234238795,
+        "train_ic": 0.00966752900047384,
+        "valid_ic": 0.03165728951290642,
+        "valid_ric": 0.061936554208295615,
+        "min_year_ic": 0.030006993816181236,
+        "turnover": 0.34188696376145555,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": 0.06001398763236247,
+        "turnover_penalty": 0.13675478550458223,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.0
+      },
+      "idea": "[LLM idea: amihud_reversal]",
+      "change": "propose amihud_reversal",
+      "params": {
+        "w1": 0.9083,
+        "w2": 0.0506,
+        "w3": 0.3268,
+        "k": 16
+      },
+      "valid": true
+    },
+    {
+      "id": 17,
+      "parent": 13,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "proposal_amihud_reversal",
+        "proposal_overnight_intraday",
+        "proposal_pv_divergence",
+        "proposal_volscaled_momentum"
+      ],
+      "reward": -0.27965,
+      "fitness": 0.10266,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.0992224443196249,
+        "train_combined": 0.02136532226080595,
+        "valid_fitness": 0.10266173175192202,
+        "train_fitness": 0.06452941877757999,
+        "train_ic": 0.005930462210399758,
+        "valid_ic": 0.01609929437449044,
+        "valid_ric": 0.007452744621918893,
+        "min_year_ic": 0.01410458038909554,
+        "turnover": 0.8801121025769543,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": 0.02820916077819108,
+        "turnover_penalty": 0.3520448410307817,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.0
+      },
+      "idea": "[LLM idea: pv_divergence]",
+      "change": "propose pv_divergence",
+      "params": {
+        "w1": 0.5724,
+        "w2": 0.2342,
+        "w3": 0.5062,
+        "k": 17
+      },
+      "valid": true
+    },
+    {
+      "id": 19,
+      "parent": 12,
+      "island": 1,
+      "depth": 2,
+      "transforms": [
+        "proposal_gk_lowvol",
+        "proposal_overnight_intraday"
+      ],
+      "reward": 0.31262,
+      "fitness": 0.47481,
+      "score_components": {
+        "objective": "portfolio_v3",
+        "valid_combined": 0.41304682892833083,
+        "train_combined": 0.08945547378319782,
+        "valid_fitness": 0.47480661635208854,
+        "train_fitness": 0.10239197911829162,
+        "train_ic": 0.0026743237812642665,
+        "valid_ic": 0.04369561298377503,
+        "valid_ric": 0.09019549866064411,
+        "min_year_ic": 0.0394051318477175,
+        "turnover": 0.03404335673391545,
+        "n_params": 1,
+        "n_hidden": 0,
+        "stability_bonus": 0.078810263695435,
+        "turnover_penalty": 0.013617342693566181,
+        "complexity_penalty": 0.02,
+        "sign_penalty": 0.0
+      },
+      "idea": "[LLM idea: gk_lowvol]",
+      "change": "propose gk_lowvol",
+      "params": {
+        "w1": 0.6199,
+        "w2": 0.0165,
+        "w3": 0.1873,
+        "k": 28
+      },
+      "valid": true
+    }
+  ],
+  "n_nodes": 20
+}

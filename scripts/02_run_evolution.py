@@ -134,8 +134,9 @@ def main():
     ap.add_argument("--require-llm", action="store_true",
                     help="require at least one accepted live LLM mutation before fallback is allowed")
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--objective", choices=["portfolio_v3", "ic_only"], default="portfolio_v3",
-                    help="default V3 objective or paper-faithful validation IC objective")
+    ap.add_argument("--objective", choices=["portfolio_v3", "portfolio_v4", "ic_only"], default="portfolio_v3",
+                    help="portfolio_v3 (IC-robust default), portfolio_v4 (return-aware excess-return), "
+                         "or ic_only (paper-faithful validation IC)")
     ap.add_argument("--elite-rule", choices=["robust", "validation"], default="robust",
                     help="default V3 robust elite selection or old validation-only top-k")
     ap.add_argument("--patience", type=int, default=50,

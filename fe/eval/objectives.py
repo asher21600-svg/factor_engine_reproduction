@@ -87,6 +87,35 @@ def min_yearly_ic(scored: pd.DataFrame, panel: pd.DataFrame, split: str = "valid
     return float(yearly.min()) if len(yearly) else 0.0
 
 
+def quantile_spread(scored: pd.DataFrame, panel: pd.DataFrame, split: str = "valid",
+                    primary_lag: int = 5, q: float = 0.1, max_dates: int = 150) -> float:
+    """Cheap, *return-aware* (not IC) signal proxy for the portfolio_v4 objective:
+    the mean daily top-q **excess** forward return (top-decile mean minus the
+    cross-sectional mean) on the split. This is the gross return of holding the
+    factor's top names vs the market each day — what the backtest actually trades —
+    without paying for a full tranche backtest inside the evolution loop."""
+    rc = f"fwd_ret_{primary_lag}"
+    if rc not in panel.columns or "split" not in panel.columns:
+        return 0.0
+    keep = panel.loc[panel["split"].eq(split), ["datetime", "instrument", rc]]
+    sub = scored.merge(keep, on=["datetime", "instrument"], how="inner").dropna(subset=["value", rc])
+    if sub.empty:
+        return 0.0
+    dates = np.array(sorted(pd.to_datetime(sub["datetime"]).unique()))
+    if len(dates) > max_dates:                       # subsample for in-loop speed
+        idx = np.linspace(0, len(dates) - 1, max_dates).round().astype(int)
+        sub = sub[sub["datetime"].isin(dates[idx])]
+    spreads = []
+    for _, g in sub.groupby("datetime"):
+        if len(g) < 20:
+            continue
+        thr = g["value"].quantile(1.0 - q)
+        top = g.loc[g["value"] >= thr, rc]
+        if len(top):
+            spreads.append(float(top.mean() - g[rc].mean()))
+    return float(np.mean(spreads)) if spreads else 0.0
+
+
 def evaluate_objective(scored: pd.DataFrame, panel: pd.DataFrame, code: str = "",
                        params: dict | None = None, objective: str = "portfolio_v3",
                        split: str = "valid", lags=LAGS,
@@ -96,6 +125,10 @@ def evaluate_objective(scored: pd.DataFrame, panel: pd.DataFrame, code: str = ""
     ``ic_only`` is the original paper-faithful validation objective.
     ``portfolio_v3`` is the new default: train/validation robust, parsimonious,
     low-turnover, and yearly-stability-aware.
+    ``portfolio_v4`` is return-aware: it optimizes the annualized gross top-decile
+    *excess* return (train AND validation) instead of IC, still penalizing turnover,
+    complexity, and sign-inconsistency — for evolving factors that lift excess
+    return, not just IC. (Definitive v3-vs-v4 needs a fresh evolution run.)
     """
     valid_m = evaluate_factor(scored, panel, lags=lags, primary_lag=primary_lag, split=split)
     if objective in ("ic", "ic_only", "combined_score"):
@@ -103,6 +136,29 @@ def evaluate_objective(scored: pd.DataFrame, panel: pd.DataFrame, code: str = ""
             "objective": "ic_only",
             "valid_combined": valid_m.combined_score,
             "valid_fitness": valid_m.fitness,
+        })
+
+    if objective == "portfolio_v4":                  # D1: return-aware objective
+        sp_v = quantile_spread(scored, panel, split=split, primary_lag=primary_lag)
+        sp_t = quantile_spread(scored, panel, split="train", primary_lag=primary_lag)
+        worst_sp = min(sp_v, sp_t)
+        turnover = rank_turnover(scored, panel, split=split)
+        min_yic = min_yearly_ic(scored, panel, split=split, primary_lag=primary_lag)
+        n_params, n_hidden = complexity_counts(code, params)
+        sign_pen = 0.0 if (sp_t > 0 and sp_v > 0) else 0.25 + 5.0 * abs(min(sp_t, sp_v, 0.0))
+        ann = 252.0
+        spread_term = ann * (0.55 * sp_v + 0.45 * worst_sp)   # annualized gross top-decile excess
+        score = (spread_term + 1.0 * min_yic
+                 - 0.04 * (turnover * 10.0)
+                 - (0.02 * n_params + 0.12 * n_hidden) - sign_pen)
+        if not np.isfinite(score):
+            score = -1e9
+        return ObjectiveResult(float(score), valid_m, {
+            "objective": "portfolio_v4",
+            "ann_spread_valid": ann * sp_v, "ann_spread_train": ann * sp_t,
+            "min_year_ic": min_yic, "turnover": turnover,
+            "n_params": n_params, "n_hidden": n_hidden, "sign_penalty": sign_pen,
+            "valid_combined": valid_m.combined_score, "valid_fitness": valid_m.fitness,
         })
 
     train_m = evaluate_factor(scored, panel, lags=lags, primary_lag=primary_lag, split="train")

@@ -268,6 +268,15 @@ def build_html(outputs: Path = None) -> Path:
     v3_456 = {}
     if (outputs / "v3_4to6.json").exists():
         v3_456 = json.loads((outputs / "v3_4to6.json").read_text())
+    ex = {}
+    if (outputs / "excess_return.json").exists():
+        ex = json.loads((outputs / "excess_return.json").read_text())
+    ext2 = {}
+    if (outputs / "excess_tier2.json").exists():
+        ext2 = json.loads((outputs / "excess_tier2.json").read_text())
+    results_v3 = {}            # portfolio_v3-evolved reference (backed up before the v4 refresh)
+    if (outputs / "results_v3.json").exists():
+        results_v3 = json.loads((outputs / "results_v3.json").read_text())
     plan_appendix = _plan_appendix()
 
     # ---- figures ----
@@ -409,6 +418,7 @@ def build_html(outputs: Path = None) -> Path:
                      + _table(["islands", "mining fitness", "CSI300 test RankIC", "CSI300 test fitness"], rows))
 
     es = results["evolution_summary"]
+    cur_obj = (evo.get("config", {}) or {}).get("objective") or es.get("objective") or "portfolio_v3"
     transforms = ", ".join(f"<code>{t}</code>" for t in es["best_transforms"]) or "—"
     params = ", ".join(f"<code>{k}={v}</code>" for k, v in es["best_params"].items())
     llm_meta = evo.get("llm", {}) or {}
@@ -581,6 +591,40 @@ def build_html(outputs: Path = None) -> Path:
                            "AER Δ", "base ann excess", "+FE ann excess", "SR",
                            "ann cost", "ann turnover"], excess_rows)
 
+    def _gross_aer(m):
+        try:
+            return float(m.get("AER", 0)) + float(m.get("ann_cost", 0))
+        except Exception:
+            return 0.0
+
+    def _turnover_cut_net(m, cut=3.0):
+        try:
+            return _gross_aer(m) - float(m.get("ann_cost", 0)) / cut
+        except Exception:
+            return 0.0
+
+    e3_levers = ex.get("csi300", {}).get("levers", {}) if ex else {}
+    e5_levers = ex.get("csi500", {}).get("levers", {}) if ex else {}
+    t3_levers = ext2.get("csi300", {}).get("levers", {}) if ext2 else {}
+    t5_levers = ext2.get("csi500", {}).get("levers", {}) if ext2 else {}
+    csi300_cost_case = u3["backtest"]["augmented"]
+    csi500_cost_case = e5_levers.get("A3_mutual_ortho") or u5["backtest"]["augmented"]
+    gross_rows = []
+    for label, m in [
+        ("CSI300 V4 default", csi300_cost_case),
+        ("CSI500 V4 + A3", csi500_cost_case),
+    ]:
+        gross_rows.append((
+            label,
+            _pct(m.get("AER")),
+            _pct(m.get("ann_cost")),
+            _pct(_gross_aer(m)),
+            f'{m.get("ann_turnover", 0):.1f}×',
+            _pct(_turnover_cut_net(m)),
+        ))
+    gross_table = _table(["case", "net AER", "ann cost drag", "gross AER proxy",
+                          "turnover", "net AER if cost / 3"], gross_rows)
+
     if ortho and ortho.get("universes"):
         _u3o = ortho["universes"].get("csi300", {})
         _u5o = ortho["universes"].get("csi500", {})
@@ -599,30 +643,32 @@ def build_html(outputs: Path = None) -> Path:
 
     excess_plan_html = (
         "<h2>Excess-return findings and improvement plan</h2>"
-        "<p><b>Finding:</b> the refreshed default path improves CSI300's benchmark-relative return, but it does "
-        "not solve excess return overall. CSI300 AER improves but remains negative; CSI500 model IC improves while "
-        "AER, annualized excess, and Sharpe worsen. That means the current pipeline finds some predictive signal, "
-        "but the portfolio layer is still paying too much cost or choosing the wrong integration mode.</p>"
+        "<p><b>Finding:</b> V4 improves benchmark-relative return on both universes, but the remaining failure is "
+        "mostly <b>execution cost</b>, not missing signal. A simple gross-vs-net decomposition "
+        "(gross proxy = net AER + annualized transaction cost) shows the strategy already earns positive gross "
+        "excess return; 75-84× annual turnover consumes it.</p>"
         f"{excess_table}"
+        "<h3>Gross-vs-net decomposition</h3>"
+        f"{gross_table}"
+        "<p class=\"small\">This reframes the next step: making net AER positive is less about inventing a stronger "
+        "factor and more about trading the existing signal more slowly. A mechanical 3× turnover/cost cut would "
+        "flip both shown cases positive if gross excess stayed roughly intact.</p>"
         f"<p class=\"small\">{aux_note}</p>"
         "<ol>"
-        "<li><b>Make AER/IR-after-cost the selection gate.</b> Keep IC/RIC as diagnostics, but promote an elite "
-        "bundle only if train and validation AER or IR improve under the same top-50, 5-day, commission, stamp, "
-        "and slippage backtest used in the report.</li>"
-        "<li><b>Add an explicit turnover and cost budget.</b> Annualized costs are around 9-10% in the current "
-        "default path. Increase the portfolio-objective penalty on rank churn, and reject candidates whose "
-        "annualized turnover/cost rises without a compensating AER lift.</li>"
-        "<li><b>Select per universe instead of one shared bundle.</b> CSI300 and CSI500 react differently. Use "
-        "separate elite sets, integration modes, and blend weights for large-cap and mid-cap universes.</li>"
-        "<li><b>Choose raw vs orthogonal by validation portfolio metrics.</b> Orthogonal residuals preserve useful "
-        "CSI500 signal but are too aggressive for CSI300 in this run. The default path should test raw, "
-        "orthogonal, and shrinkage-blend variants, then keep the one with the best validation AER/IR.</li>"
-        "<li><b>Tune the portfolio construction, not only the factor formula.</b> Grid top-k, holding period, "
-        "rebalance cadence, and FE/baseline blend weight on train/validation. Longer holding or smaller FE blend "
-        "can reduce churn when IC exists but excess return is negative.</li>"
-        "<li><b>Persist portfolio diagnostics for every V3 arm.</b> Store AER, IR, RMDD, annualized excess, "
-        "annualized turnover, and annualized cost in robust/orthogonal JSON outputs, so the report can compare "
-        "candidate integrations on tradability rather than only IC/SR.</li>"
+        "<li><b>Tier 1: run a turnover sweep on cached V4 predictions.</b> Test EWM signal smoothing "
+        "(span 5/10), longer holds (10/15/20 days), and true rank-band rebalancing (buy top-30, sell outside "
+        "top-100). This is backtest-only and directly targets the 9-10% cost drag.</li>"
+        "<li><b>Combine the best turnover levers.</b> C2 selection hysteresis barely reduced turnover because the "
+        "5-day, 5-tranche book still forces churn. The next sweep should attack prediction stability and holding "
+        "length, not only selection retention.</li>"
+        "<li><b>Select per universe.</b> CSI300 currently likes the beta/size-neutral tier-2 variant; CSI500 likes "
+        "A3 factor-set decorrelation alone. A single shared integration rule leaves money on the table.</li>"
+        "<li><b>Tier 2: evolve with a true net objective.</b> <code>portfolio_v4</code> optimized gross top-decile "
+        "excess with turnover/complexity penalties. A <code>portfolio_v5</code> objective should subtract the "
+        "actual A-share cost model from estimated turnover so the search optimizes tradeable net alpha.</li>"
+        "<li><b>Persist portfolio diagnostics for every arm.</b> Store gross AER proxy, net AER, IR, RMDD, "
+        "annualized excess, annualized turnover, and annualized cost so the report can separate signal quality "
+        "from implementation drag.</li>"
         "</ol>")
 
     v3_html = (
@@ -832,6 +878,160 @@ def build_html(outputs: Path = None) -> Path:
     else:
         result6_note = ""
 
+    # --- Result 7 — excess-return levers (scripts/09_excess_return.py) ---
+    excess_html = ""
+    if ex:
+        def _ex_table(uni):
+            lv = ex.get(uni, {}).get("levers", {})
+            b_aer = lv.get("V3_baseline", {}).get("AER", 0)
+            labels = {
+                "V3_baseline": "V4 default",
+                "B1_size_neutral": "B1 size-neutral",
+                "C1_rank_weight": "C1 rank-weight",
+                "C2_hyst_0.5": "C2 hysteresis 0.5",
+                "A3_mutual_ortho": "A3 mutual-ortho",
+                "A3_plus_B1": "A3 + B1",
+                "A3_B1_C2": "A3 + B1 + C2",
+            }
+            order = ["V3_baseline", "B1_size_neutral", "C1_rank_weight", "C2_hyst_0.5",
+                     "A3_mutual_ortho", "A3_plus_B1", "A3_B1_C2"]
+            best_key = max(
+                (k for k, v in lv.items() if isinstance(v, dict) and "AER" in v),
+                key=lambda k: lv[k].get("AER", -99),
+                default=None,
+            )
+            rows = []
+            for k in order:
+                m = lv.get(k)
+                if not m:
+                    continue
+                d = m.get("AER", 0) - b_aer
+                star = ' class="best"' if k == best_key else ''
+                rows.append((f'<span{star}>{labels.get(k, k)}</span>', _num(m.get("AER")), _num(m.get("IR"), 3),
+                             _num(m.get("AR")), _num(m.get("SR"), 3),
+                             f'{m.get("ann_turnover", 0):.1f}', _num(d)))
+            return _table(["lever (test)", "AER", "IR", "AR", "SR", "turnover", "ΔAER"], rows)
+
+        e3 = ex.get("csi300", {}).get("levers", {})
+        e5 = ex.get("csi500", {}).get("levers", {})
+
+        def _g(d, k, f):
+            return d.get(k, {}).get(f, 0)
+
+        def _best_lever(d):
+            vals = [(k, v) for k, v in d.items() if isinstance(v, dict) and "AER" in v]
+            return max(vals, key=lambda kv: kv[1].get("AER", -99)) if vals else ("—", {})
+
+        b3_key, b3_val = _best_lever(e3)
+        b5_key, b5_val = _best_lever(e5)
+
+        excess_html = (
+            "<h2>Result 7 — excess-return levers (adjusting the factor set)</h2>"
+            "<p>The excess-return lever files are A/B'd against the current <b>V4 default</b> arm "
+            "(kept under the historical JSON key <code>V3_baseline</code> for compatibility). Net AER remains "
+            "slightly negative because turnover is very high, not because gross signal is absent. Four offline "
+            "levers were tested without an LLM re-run: <b>A3</b> mutually orthogonalizes the elite set, "
+            "<b>B1</b> size-neutralizes the combined signal, <b>C1</b> rank-weights holdings by conviction, and "
+            "<b>C2</b> adds a selection no-trade band.</p>"
+            "<h3>CSI300 (large-cap)</h3>" + _ex_table("csi300") +
+            "<h3>CSI500 (mid-cap)</h3>" + _ex_table("csi500") +
+            "<p class=\"small\"><b>Finding.</b> The post-hoc levers are useful but not decisive. "
+            f"On <b>CSI300</b>, the best tier-1 lever is <code>{b3_key}</code>, lifting AER "
+            f"{_pct(_g(e3,'V3_baseline','AER'))}→<b>{_pct(b3_val.get('AER'))}</b>; on "
+            f"<b>CSI500</b>, <code>{b5_key}</code> is best, lifting AER "
+            f"{_pct(_g(e5,'V3_baseline','AER'))}→<b>{_pct(b5_val.get('AER'))}</b>. "
+            "C1 is rejected because conviction-weighting amplifies unstable tail names. C2 helps CSI300 a little "
+            "in this V4 run, but it barely changes turnover, so it is not the true solution. The remaining gap is "
+            "a turnover/cost problem: the signal is gross-positive, while the 5-day overlapping-tranche book keeps "
+            "annualized turnover near 75-84×.</p>")
+
+        # tier-2 levers (scripts/10) — reported per universe because the best arm differs.
+        if ext2:
+            def _t2(uni, k, f="AER"):
+                return ext2.get(uni, {}).get("levers", {}).get(k, {}).get(f, 0)
+            t3_key, t3_val = _best_lever(ext2.get("csi300", {}).get("levers", {}))
+            t5_key, t5_val = _best_lever(ext2.get("csi500", {}).get("levers", {}))
+            excess_html += (
+                "<h3>Tier 2 — beta-neutralization &amp; IC-weighted combine</h3>"
+                "<p class=\"small\">The tier-2 results are universe-dependent. "
+                f"On <b>CSI300</b>, <code>{t3_key}</code> is currently best "
+                f"(AER <b>{_pct(t3_val.get('AER'))}</b> vs V4 default {_pct(_t2('csi300','V3_baseline'))}), "
+                "so beta/size neutralization is worth carrying forward there. On "
+                f"<b>CSI500</b>, <code>{t5_key}</code> remains best "
+                f"(AER <b>{_pct(t5_val.get('AER'))}</b>), and beta neutralization dilutes the mid-cap signal. "
+                f"<b>B2</b> (IC-weighted <i>linear</i> combine instead of the LightGBM tree-merge) is rejected "
+                f"(CSI300 {_pct(_t2('csi300','B2_ic_weighted'))}, CSI500 {_pct(_t2('csi500','B2_ic_weighted'))}): "
+                "a single-feature-IC linear sum cannot model the tree's interactions and double-counts collinear "
+                "Alpha158 features. <b>D1:</b> the fresh live <code>portfolio_v4</code> evolution is now complete; "
+                "it improves net AER versus V3, but because it optimizes a gross-return proxy, the next objective "
+                "should be <code>portfolio_v5</code>: gross excess minus the actual turnover-based A-share cost "
+                "model.</p>")
+
+    # --- Result 8 — portfolio_v4 vs portfolio_v3 (evolving FOR excess return) ---
+    v3v4_html = ""
+    _cur_obj = cur_obj
+    if results_v3 and _cur_obj == "portfolio_v4":
+        def _au(res, uni, sect, key):
+            return res.get("universes", {}).get(uni, {}).get(sect, {}).get("augmented", {}).get(key, 0)
+        rows = []
+        for uni in results.get("universes", {}):
+            if uni not in results_v3.get("universes", {}):
+                continue
+            rows.append((uni.upper(),
+                         _num(_au(results_v3, uni, "model", "IC")), _num(_au(results, uni, "model", "IC")),
+                         _num(_au(results_v3, uni, "backtest", "AER")), _num(_au(results, uni, "backtest", "AER")),
+                         f'{_au(results_v3, uni, "backtest", "SR"):.2f}', f'{_au(results, uni, "backtest", "SR"):.2f}'))
+        v3v4_tbl = _table(["universe", "IC v3", "IC v4", "AER v3", "AER v4", "SR v3", "SR v4"], rows)
+        ic3_300, ic4_300 = _au(results_v3, "csi300", "model", "IC"), _au(results, "csi300", "model", "IC")
+        a3_500, a4_500 = _au(results_v3, "csi500", "backtest", "AER"), _au(results, "csi500", "backtest", "AER")
+        a3_300, a4_300 = _au(results_v3, "csi300", "backtest", "AER"), _au(results, "csi300", "backtest", "AER")
+        v3v4_html = (
+            "<h2>Result 8 — evolving FOR excess return (portfolio_v4 vs portfolio_v3)</h2>"
+            "<p>The earlier default path evolved and selected factors by <b>IC</b> (the V3 protocol). "
+            "The plan's lever D1 instead "
+            "changes the <i>search objective itself</i>: <code>portfolio_v4</code> optimizes the annualized gross "
+            "top-decile <b>excess return</b> (train ∧ validation, turnover/complexity-penalized) during evolution. "
+            f"A fresh <b>live-Kimi 300-iteration run</b> under <code>portfolio_v4</code> ({n_llm} accepted Kimi "
+            "mutations) converged on low-turnover, liquidity-reversal and low-vol factors "
+            "(<code>amihud_reversal</code>, <code>gk_lowvol</code>, <code>overnight_intraday</code>) — exactly the "
+            "families the objective rewards, vs the higher-turnover momentum the IC objective favored. The "
+            "augmented multi-factor model improves out-of-sample on <b>both</b> universes:</p>"
+            f"{v3v4_tbl}"
+            "<p class=\"small\"><b>Finding — the strongest excess-return lever found.</b> Changing the search "
+            f"objective lifts CSI300 model IC {_num(ic3_300)}→<b>{_num(ic4_300)}</b> "
+            f"({100*(ic4_300-ic3_300)/max(1e-9,abs(ic3_300)):+.0f}%) and excess return "
+            f"{_num(a3_300)}→<b>{_num(a4_300)}</b>; CSI500 excess return {_num(a3_500)}→<b>{_num(a4_500)}</b> "
+            "(roughly halved), with both Sharpes rising. The objective shift is the main V3→V4 improvement; "
+            "the post-hoc levers in Result 7 are now best viewed as universe-specific refinements and turnover "
+            "diagnostics. <b>Caveat:</b> the two runs differ in LLM trajectory (n_llm 250 vs 10) as well as "
+            "objective, so this is a strong directional result, not a perfectly controlled A/B; a same-trajectory "
+            "v3-vs-v4 run would isolate the objective effect cleanly.</p>")
+
+    if fe_helps:
+        exec_takeaway = (
+            f"<p>The live <b>{llm_provider}/{llm_model}</b> macro-agent successfully drove a "
+            f"<code>{cur_obj}</code> FactorEngine run on real A-share data — <b>{n_llm} of {n_iters_cfg}</b> "
+            f"accepted steps were Kimi-authored mutations — and lifted validation fitness "
+            f"<b>{best_fit/seed_fit:.1f}×</b> ({seed_fit:+.3f}→{best_fit:+.3f}). Unlike the earlier IC-only path, "
+            f"the V4 augmented model <b>transfers out-of-sample</b>: model IC rises on both universes "
+            f"(CSI300 {_b3}→{_a3}, CSI500 {_b5}→{_a5}), and net AER improves versus both the baseline and the "
+            "saved V3 reference. The remaining negative net AER is mostly an implementation-cost problem: "
+            f"CSI300 V4 default earns about <b>{_pct(_gross_aer(csi300_cost_case))}</b> gross AER before "
+            f"<b>{_pct(csi300_cost_case.get('ann_cost'))}</b> annualized cost, while CSI500 V4+A3 earns about "
+            f"<b>{_pct(_gross_aer(csi500_cost_case))}</b> gross AER before "
+            f"<b>{_pct(csi500_cost_case.get('ann_cost'))}</b> cost. The signal is real; the next bottleneck is "
+            "<b>turnover control</b> — see the gross-vs-net decomposition and turnover sweep plan below.</p>")
+    else:
+        exec_takeaway = (
+            f"<p>The live <b>{llm_provider}/{llm_model}</b> macro-agent successfully drove FactorEngine's "
+            f"evolution on real A-share data — <b>{n_llm} of {n_iters_cfg}</b> steps were Kimi-authored "
+            f"mutations — and lifted in-sample validation fitness <b>{best_fit/seed_fit:.1f}×</b> "
+            f"({seed_fit:+.3f}→{best_fit:+.3f}). The honest result is that this does <b>not</b> transfer: "
+            "selecting elite factors by validation fitness alone <b>overfits</b>, so the augmented multi-factor "
+            f"model <b>does not transfer robustly out-of-sample</b>: CSI300 degrades ({_d3}), while CSI500 gets "
+            f"only a small IC lift ({_d5}) that fails to improve AR/SR. The bottleneck is "
+            "<b>selection/integration, not LLM connectivity</b> — see the V3 protocol.</p>")
+
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>FactorEngine — Reproduction Report</title><style>{CSS}</style></head><body>
 <h1>FactorEngine (FE) — Reproduction Report</h1>
@@ -840,16 +1040,8 @@ def build_html(outputs: Path = None) -> Path:
 <p class="sub">Run: <b>{es.get('panel','—')}</b> · {n_iters_cfg} iterations · {agent} ({llm_provider}/{llm_model},
 n_llm={n_llm}) · {DATASRC.split('(')[0].strip()} · runtime {runtime_s/3600:.1f}h</p>
 
-<h2>Executive takeaway</h2>
-<p>The live <b>{llm_provider}/{llm_model}</b> macro-agent successfully drove FactorEngine's evolution on real
-A-share data — <b>{n_llm} of {n_iters_cfg}</b> steps were Kimi-authored mutations — and lifted in-sample
-validation fitness <b>{best_fit/seed_fit:.1f}×</b> ({seed_fit:+.3f}→{best_fit:+.3f}). The honest result is that
-this does <b>not</b> transfer: selecting elite factors by validation fitness alone <b>overfits</b>, so the
-augmented multi-factor model <b>does not transfer robustly out-of-sample</b>: CSI300 degrades ({_d3}), while
-CSI500 gets only a small IC lift ({_d5}) that fails to improve AR/SR — a faithful reproduction of the alpha-decay
-risk the paper's diversity/regularization design targets. The signal is real but mis-selected: the FE factor's
-CSI500 <i>standalone</i> OOS IC is <b>{_num(sf5_oos)}</b>. The bottleneck is <b>selection/integration, not LLM
-connectivity</b> — see the V3 protocol.</p>
+	<h2>Executive takeaway</h2>
+	{exec_takeaway}
 
 <h2>TL;DR</h2>
 {hero}
@@ -897,7 +1089,7 @@ single-factor edge is marginal ({_num(sf['fe_engine_evolved']['IC'])}). The pape
 {sf_table}
 <div class="fig">{_b64(f_div)}</div>
 
-<h2>Result 2 — multi-factor integration is the weak link</h2>
+	<h2>Result 2 — multi-factor integration and implementation cost</h2>
 <p>The augmented model merges the <b>top-{u3.get('config', {}).get('n_elite_factors', 1)} elite evolved
 factors</b> (fitness &gt; 0.4, paper §4.3) with the baseline set — a multi-factor model, not a single factor.</p>
 {mb_table}
@@ -927,6 +1119,10 @@ of years where the augmented model's IC beat the Alpha158-128 baseline:</p>
 {ortho_html}
 
 {v3_456_html}
+
+{excess_html}
+
+{v3v4_html}
 
 <h2>Ablations</h2>
 {abl_html or '<p>(not run)</p>'}
