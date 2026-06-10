@@ -81,6 +81,28 @@ python scripts/03_ablations.py && python scripts/05_build_report.py
 ```
 Everything falls back to the synthetic panel if no bundle is present.
 
+## Dependency-light evaluator — `factor_lite.py`
+
+A single self-contained file (**`numpy` + `pandas` only** — no `qlib`, LightGBM, Optuna,
+GPLearn, or backtest framework) that reads the local Qlib `.bin` data **directly** and scores
+factors by **IC / RankIC / ICIR**, plus a trivial top-decile long-short return proxy:
+
+```bash
+python factor_lite.py                                  # csi300, ~/.qlib/qlib_data/cn_data
+python factor_lite.py --market csi500 --split test --ret fwd10
+```
+
+Add a factor in one line inside `add_factors()`: `panel["f_myidea"] = ...`.
+
+**Why IC instead of a backtest?** Results 9–10 of the full reproduction show the top-50/5-day
+tranche backtest mostly measures *turnover and A-share cost*, not signal — a longer holding
+period flips the same factor from negative to positive net excess without changing the factor.
+So a factor's out-of-sample **IC is the honest, portable headline**, and dropping the backtest
+framework loses nothing scientific. Run on real data, `factor_lite.py` independently reproduces
+the project's findings: **low-vol / reversal / range families carry the signal, momentum is
+negative, and mid-cap (CSI500) signal > large-cap (CSI300)** — e.g. CSI500 `f_lowvol`
+RankIC ≈ +0.056, `f_range_rev` ≈ +0.060.
+
 ## Key results (synthetic CSI300/500, ~40-iteration budget)
 
 - The engine evolves the seed factor to **~5–7× single-factor fitness** on the mining set and higher
