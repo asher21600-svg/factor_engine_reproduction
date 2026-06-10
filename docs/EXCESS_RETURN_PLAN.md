@@ -176,3 +176,31 @@ Wired `--objective portfolio_v5`. Unit-tested (best v4 elite: ann_gross 0.39, an
 **net 0.35**; top-decile turnover 7.2%/day). This makes tradeability part of factor *search*
 rather than a post-hoc backtest surprise. Definitive run needs a fresh live evolution:
 `OBJECTIVE=portfolio_v5 ./run_kimi_v3.sh`.
+
+## Result 10 — beating the baseline AND the index (cumulative excess)
+Addresses "augmented cumulative excess ≈ baseline, both trail the index." Diagnosis:
+(1) evolved OHLCV factors are **spanned by Alpha158** (marginal IC ≈0 on CSI300, +0.0008
+on CSI500) → LightGBM gives them ~0 importance → augmented ≈ baseline; (2) the 5-day book
+is cost-dominated → both trail the index (cum-excess < 1.0). Fixes (`scripts/12_beat_baseline.py`):
+**residual stacking** (Alpha158 first, then a small FE model on *only* its residual) + the
+**Result-9 optimal hold**. Cumulative excess (portfolio ÷ index; >1.0 beats the index):
+
+| Universe (opt hold) | arm | 5-day | optimal |
+|---------------------|-----|-------|---------|
+| CSI300 (40d) | baseline | 0.852 | **1.134** (best) |
+|              | augmented | 0.881 | 1.119 |
+|              | stack | 0.884 | 1.104 |
+| CSI500 (25d) | baseline | 0.940 | 1.109 |
+|              | augmented | 0.908 | 1.118 |
+|              | stack | 0.837 | **1.126** (best, IR 0.41→0.46) |
+
+- **At the optimal hold every arm beats the index** (cum-excess >1.0) — the *holding period*,
+  not the factors, clears the index; at 5 days all trail it.
+- **Residual stacking beats the baseline on CSI500** (1.109→1.126) — harvests the small
+  orthogonal mid-cap alpha.
+- **On CSI300 the baseline is unbeaten** (1.134): Alpha158 is near-efficient for OHLCV
+  large-caps; same-modality factors only dilute. **Beating it needs a different data modality**
+  (intraday/overnight, Amihud illiquidity, Garman–Klass vol, or non-OHLCV fundamentals) — the
+  families the engine's runs gravitated toward (gk_lowvol/overnight/amihud).
+- Honest ceiling: with OHLCV-only data the marginal value of evolved factors over Alpha158 is
+  small and mid-cap-specific — consistent with the paper's own +5% FE-alpha IC gain.

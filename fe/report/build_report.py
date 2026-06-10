@@ -280,6 +280,9 @@ def build_html(outputs: Path = None) -> Path:
     sweep = {}
     if (outputs / "turnover_sweep.json").exists():
         sweep = json.loads((outputs / "turnover_sweep.json").read_text())
+    beat = {}
+    if (outputs / "beat_baseline.json").exists():
+        beat = json.loads((outputs / "beat_baseline.json").read_text())
     plan_appendix = _plan_appendix()
 
     # ---- figures ----
@@ -1092,6 +1095,50 @@ def build_html(outputs: Path = None) -> Path:
             "signal. The next refinement, <code>portfolio_v5</code>, bakes the cost model into the evolution "
             "objective so the search itself prefers tradeable (net-positive) factors.</p>")
 
+    # --- Result 10 — beating the baseline AND the index (residual stack + optimal hold) ---
+    beat_html = ""
+    if beat:
+        def _br(uni, tag):
+            return beat.get(uni, {}).get("holds", {}).get(tag, {})
+
+        def _beat_tbl(uni):
+            oh = beat.get(uni, {}).get("opt_hold", "?")
+            rows = []
+            for arm in ("baseline", "augmented", "stack"):
+                h5 = _br(uni, "h5").get(arm, {})
+                op = _br(uni, "opt").get(arm, {})
+                rows.append((arm, f'{h5.get("cum_excess", 0):.3f}',
+                             f'<b>{op.get("cum_excess", 0):.3f}</b>' + (' ✓' if op.get("beats_index") else ''),
+                             _num(op.get("AER")), _num(op.get("IR"), 3), f'{op.get("turnover", 0):.0f}×'))
+            return oh, _table([f"{uni.upper()} arm", "cum-excess 5d", f"cum-excess {oh}d", "AER", "IR", "turnover"], rows)
+
+        oh3, tbl3 = _beat_tbl("csi300")
+        oh5, tbl5 = _beat_tbl("csi500")
+        b3 = {a: _br("csi300", "opt").get(a, {}).get("cum_excess", 0) for a in ("baseline", "augmented", "stack")}
+        b5 = {a: _br("csi500", "opt").get(a, {}).get("cum_excess", 0) for a in ("baseline", "augmented", "stack")}
+        beat_html = (
+            "<h2>Result 10 — beating the baseline <i>and</i> the index (cumulative excess)</h2>"
+            "<p>Result 2 showed the augmented model's cumulative excess return barely exceeds the Alpha158 "
+            "baseline and trails the index (curve below 1.0). Two reasons: the evolved OHLCV factors are largely "
+            "<b>spanned by Alpha158</b> (their marginal IC vs the 128 baseline features is ≈0 on CSI300, +0.0008 "
+            "on CSI500), and the 5-day book is <b>cost-dominated</b> (Result 9). Two fixes: <b>residual "
+            "stacking</b> — train Alpha158 first, then a small FE model on <i>only</i> the baseline's residual, so "
+            "the factors can add but not dilute — and the <b>Result-9 optimal hold</b>. Final cumulative excess "
+            "(portfolio ÷ index; &gt;1.0 beats the index):</p>"
+            f"{tbl3}{tbl5}"
+            "<p class=\"small\"><b>Findings.</b> (1) At the optimal hold <b>every arm beats the index</b> "
+            f"(CSI300 ≈<b>{max(b3.values()):.3f}</b>, CSI500 ≈<b>{max(b5.values()):.3f}</b>) — the holding period, "
+            "not the factors, is what clears the index; at 5 days all three trail it (&lt;1.0). (2) <b>Residual "
+            f"stacking beats the baseline on CSI500</b> (cum-excess {b5['baseline']:.3f}→<b>{b5['stack']:.3f}</b>, "
+            "IR 0.41→0.46) — it harvests the small orthogonal mid-cap alpha. (3) On <b>CSI300 the baseline is "
+            f"unbeaten</b> ({b3['baseline']:.3f} &gt; stack {b3['stack']:.3f}): Alpha158 is <b>near-efficient for "
+            "OHLCV large-caps</b>, so same-modality factors only dilute it. Beating the baseline there needs a "
+            "<b>different data modality</b> (intraday/overnight split, Amihud illiquidity, Garman–Klass vol, or "
+            "non-OHLCV fundamentals) — exactly the families the engine's last run gravitated toward "
+            "(<code>gk_lowvol</code>, <code>overnight_intraday</code>, <code>amihud_reversal</code>). The honest "
+            "ceiling: with OHLCV-only data, the marginal value of evolved factors over Alpha158 is small and "
+            "mid-cap-specific.</p>")
+
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>FactorEngine — Reproduction Report</title><style>{CSS}</style></head><body>
 <h1>FactorEngine (FE) — Reproduction Report</h1>
@@ -1185,6 +1232,8 @@ of years where the augmented model's IC beat the Alpha158-128 baseline:</p>
 {v3v4_html}
 
 {sweep_html}
+
+{beat_html}
 
 <h2>Ablations</h2>
 {abl_html or '<p>(not run)</p>'}

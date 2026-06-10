@@ -1,0 +1,116 @@
+{
+  "csi300": {
+    "opt_hold": 40,
+    "holds": {
+      "h5": {
+        "baseline": {
+          "AER": -0.0206,
+          "IR": -0.1657,
+          "SR": 0.1133,
+          "turnover": 74.58,
+          "cum_excess": 0.8518,
+          "beats_index": false
+        },
+        "augmented": {
+          "AER": -0.01626,
+          "IR": -0.1076,
+          "SR": 0.134,
+          "turnover": 74.77,
+          "cum_excess": 0.8813,
+          "beats_index": false
+        },
+        "stack": {
+          "AER": -0.01582,
+          "IR": -0.1155,
+          "SR": 0.1343,
+          "turnover": 75.01,
+          "cum_excess": 0.8844,
+          "beats_index": false
+        }
+      },
+      "opt": {
+        "baseline": {
+          "AER": 0.01647,
+          "IR": 0.3094,
+          "SR": 0.2835,
+          "turnover": 9.96,
+          "cum_excess": 1.1341,
+          "beats_index": true
+        },
+        "augmented": {
+          "AER": 0.01474,
+          "IR": 0.2832,
+          "SR": 0.2745,
+          "turnover": 9.86,
+          "cum_excess": 1.1194,
+          "beats_index": true
+        },
+        "stack": {
+          "AER": 0.01294,
+          "IR": 0.2546,
+          "SR": 0.2675,
+          "turnover": 9.99,
+          "cum_excess": 1.1041,
+          "beats_index": true
+        }
+      }
+    }
+  },
+  "csi500": {
+    "opt_hold": 25,
+    "holds": {
+      "h5": {
+        "baseline": {
+          "AER": -0.00799,
+          "IR": -0.0419,
+          "SR": 0.0342,
+          "turnover": 83.78,
+          "cum_excess": 0.9401,
+          "beats_index": false
+        },
+        "augmented": {
+          "AER": -0.01242,
+          "IR": -0.1262,
+          "SR": 0.0148,
+          "turnover": 84.36,
+          "cum_excess": 0.9082,
+          "beats_index": false
+        },
+        "stack": {
+          "AER": -0.0229,
+          "IR": -0.3732,
+          "SR": -0.0351,
+          "turnover": 83.85,
+          "cum_excess": 0.8365,
+          "beats_index": false
+        }
+      },
+      "opt": {
+        "baseline": {
+          "AER": 0.0135,
+          "IR": 0.4143,
+          "SR": 0.1183,
+          "turnover": 17.32,
+          "cum_excess": 1.1089,
+          "beats_index": true
+        },
+        "augmented": {
+          "AER": 0.01458,
+          "IR": 0.4418,
+          "SR": 0.1229,
+          "turnover": 17.45,
+          "cum_excess": 1.118,
+          "beats_index": true
+        },
+        "stack": {
+          "AER": 0.01547,
+          "IR": 0.46,
+          "SR": 0.1247,
+          "turnover": 17.28,
+          "cum_excess": 1.1256,
+          "beats_index": true
+        }
+      }
+    }
+  }
+}
