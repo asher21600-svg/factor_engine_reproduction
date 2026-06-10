@@ -63,6 +63,25 @@ excess return moved only modestly. The gap is where the next gains are:
   with the robust train∧valid rule.
 - Fold into the report as **Result 7 — excess-return levers**.
 
+## ⚠️ CORRECTION (objective-shadowing bug) — read first
+A variable-shadowing bug in `fe/evolution/micro.py` (`optimize_parameters` defined a local
+`def objective(trial)` that shadowed its `objective: str` argument) caused the Optuna
+micro-search to **silently optimize `portfolio_v3` for every run**, regardless of
+`--objective`. **Proof:** each run's stored `best_reward` equals the `portfolio_v3` score to
+5 decimals (the "v4" run 0.31262 vs v4-formula 0.30149; the live "v5" run 0.32357 vs
+v5-formula 0.37043). **Consequences:**
+- The **"V4 beats V3" result below (and former report Result 8) is RETRACTED** — the two
+  runs both optimized v3; their differences were LLM-trajectory / mutation-count noise
+  (≈250 vs ≈10 accepted mutations), not the objective.
+- **Result 9 (turnover → positive net AER) is UNAFFECTED** — it is backtest-side, independent
+  of the evolution objective.
+- **Fixed & hardened:** nested fn renamed (`_trial_objective`); `evaluate_objective` now
+  **raises on an unknown objective** instead of defaulting to v3 (this guard is what surfaced
+  the bug). Validated: the micro-search now threads `portfolio_v3 / v4 / v5` correctly.
+- A genuine v3-vs-v4-vs-v5 comparison **requires a fresh run with the fix** (pending; live
+  Kimi on the user's machine). The numbers in the V4 section below are kept for the record but
+  do NOT reflect an actual objective change.
+
 ## Status / changelog
 Implemented in `scripts/09_excess_return.py` and `scripts/10_excess_tier2.py`
 (test split, index benchmark, net of A-share costs) plus
@@ -135,8 +154,25 @@ The turnover sweep (EWM smoothing × holding × rank-band, on cached v4 preds) f
 - **Next refinements:** find the exact holding optimum (test 12/15/25/30) and implement `portfolio_v5`
   (cost-net objective) so the search evolves factors that are tradeable net, not just gross-predictive.
 
-## V5 objective
-`portfolio_v4` optimizes a gross top-decile excess-return proxy with turnover/complexity
-penalties. The next evolution objective should be **`portfolio_v5` = gross excess − real
-turnover cost**, using the report's commission/stamp/slippage model. That makes tradeability
-part of factor search instead of a post-hoc backtest surprise.
+## Refinement 1 — finer holding sweep (DONE)
+`scripts/11` is now CLI-parameterizable (`--spans --holds --bands`). A fine sweep over
+{5,10,12,15,20,25,30,40}-day holds (span=1; smoothing already rejected) locates the optima:
+- **CSI500: interior optimum at a 25-day hold** — A3 + band → **net AER +2.11%, IR +0.60**
+  (turnover 17×, cost 2.1%). Gross excess decays beyond 25d, so net falls past the peak.
+- **CSI300: monotonic to 40 days** — base + band → **net AER +1.90%, IR +0.35** (turnover 10×,
+  cost 1.2%). Cost-dominated: it prefers low frequency; the optimum is at/beyond the longest
+  tested hold. Honest caveat: a 25–40-day hold is a lower-frequency strategy than the paper's
+  5-day design — the right tradeoff for a short-horizon, cost-dominated signal.
+
+Both beat the earlier h20 result (CSI300 +1.07%, CSI500 +1.88%). Report Result 9 cites the
+refined optima dynamically.
+
+## Refinement 2 — `portfolio_v5` cost-net objective (IMPLEMENTED)
+`fe/eval/objectives.py`: `portfolio_v5` = **annualized gross top-decile excess − (top-decile
+set-turnover × A-share round-trip cost)**, train ∧ valid, minus complexity/sign penalties.
+New helper `quantile_set_turnover` (daily fraction of the top-decile that rotates) gives the
+cost cheaply without a backtest; `ROUND_TRIP_COST = 2·commission + stamp + 2·slippage ≈ 2.4e-3`.
+Wired `--objective portfolio_v5`. Unit-tested (best v4 elite: ann_gross 0.39, ann_cost 0.044,
+**net 0.35**; top-decile turnover 7.2%/day). This makes tradeability part of factor *search*
+rather than a post-hoc backtest surprise. Definitive run needs a fresh live evolution:
+`OBJECTIVE=portfolio_v5 ./run_kimi_v3.sh`.

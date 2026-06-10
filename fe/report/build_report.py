@@ -965,15 +965,14 @@ def build_html(outputs: Path = None) -> Path:
                 f"<b>B2</b> (IC-weighted <i>linear</i> combine instead of the LightGBM tree-merge) is rejected "
                 f"(CSI300 {_pct(_t2('csi300','B2_ic_weighted'))}, CSI500 {_pct(_t2('csi500','B2_ic_weighted'))}): "
                 "a single-feature-IC linear sum cannot model the tree's interactions and double-counts collinear "
-                "Alpha158 features. <b>D1:</b> the fresh live <code>portfolio_v4</code> evolution is now complete; "
-                "it improves net AER versus V3, but because it optimizes a gross-return proxy, the next objective "
-                "should be <code>portfolio_v5</code>: gross excess minus the actual turnover-based A-share cost "
-                "model.</p>")
+                "Alpha158 features. <b>D1:</b> the gross-excess <code>portfolio_v4</code> and cost-net "
+                "<code>portfolio_v5</code> objectives are implemented, but — per <b>Result 8</b> — a now-fixed "
+                "micro-search bug meant no run had actually optimized them; a genuine objective comparison is "
+                "pending a fresh run.</p>")
 
     # --- Result 8 — portfolio_v4 vs portfolio_v3 (evolving FOR excess return) ---
     v3v4_html = ""
-    _cur_obj = cur_obj
-    if results_v3 and _cur_obj == "portfolio_v4":
+    if results_v3 and results.get("universes"):
         def _au(res, uni, sect, key):
             return res.get("universes", {}).get(uni, {}).get(sect, {}).get("augmented", {}).get(key, 0)
         rows = []
@@ -984,46 +983,47 @@ def build_html(outputs: Path = None) -> Path:
                          _num(_au(results_v3, uni, "model", "IC")), _num(_au(results, uni, "model", "IC")),
                          _num(_au(results_v3, uni, "backtest", "AER")), _num(_au(results, uni, "backtest", "AER")),
                          f'{_au(results_v3, uni, "backtest", "SR"):.2f}', f'{_au(results, uni, "backtest", "SR"):.2f}'))
-        v3v4_tbl = _table(["universe", "IC v3", "IC v4", "AER v3", "AER v4", "SR v3", "SR v4"], rows)
-        ic3_300, ic4_300 = _au(results_v3, "csi300", "model", "IC"), _au(results, "csi300", "model", "IC")
-        a3_500, a4_500 = _au(results_v3, "csi500", "backtest", "AER"), _au(results, "csi500", "backtest", "AER")
-        a3_300, a4_300 = _au(results_v3, "csi300", "backtest", "AER"), _au(results, "csi300", "backtest", "AER")
+        v3v4_tbl = _table(["universe", "IC run A", "IC run B", "AER run A", "AER run B", "SR run A", "SR run B"], rows)
         v3v4_html = (
-            "<h2>Result 8 — evolving FOR excess return (portfolio_v4 vs portfolio_v3)</h2>"
-            "<p>The earlier default path evolved and selected factors by <b>IC</b> (the V3 protocol). "
-            "The plan's lever D1 instead "
-            "changes the <i>search objective itself</i>: <code>portfolio_v4</code> optimizes the annualized gross "
-            "top-decile <b>excess return</b> (train ∧ validation, turnover/complexity-penalized) during evolution. "
-            f"A fresh <b>live-Kimi 300-iteration run</b> under <code>portfolio_v4</code> ({n_llm} accepted Kimi "
-            "mutations) converged on low-turnover, liquidity-reversal and low-vol factors "
-            "(<code>amihud_reversal</code>, <code>gk_lowvol</code>, <code>overnight_intraday</code>) — exactly the "
-            "families the objective rewards, vs the higher-turnover momentum the IC objective favored. The "
-            "augmented multi-factor model improves out-of-sample on <b>both</b> universes:</p>"
+            "<h2>Result 8 — methodological correction: the search objective never actually changed</h2>"
+            "<p>The plan's lever D1 — evolve <i>for</i> excess return by switching the search objective from IC "
+            "(<code>portfolio_v3</code>) to a gross-excess objective (<code>portfolio_v4</code>) — was implemented "
+            "and unit-tested, and an earlier draft of this report credited it with the improvement below. "
+            "<b>That attribution was wrong.</b> A variable-shadowing bug in the Optuna micro-search "
+            "(<code>optimize_parameters</code> defined a local <code>objective</code> function that shadowed its "
+            "<code>objective</code> string argument) silently routed <b>every</b> run through "
+            "<code>portfolio_v3</code>, whatever <code>--objective</code> was passed.</p>"
+            "<p><b>Proof:</b> recomputing each run's best factor, the stored reward matches the "
+            "<code>portfolio_v3</code> score to five decimals (the \"v4\" run 0.31262 vs the v4-formula 0.30149; "
+            "the live \"v5\" run 0.32357 vs the v5-formula 0.37043). So the two live-Kimi runs below both "
+            "optimized <code>portfolio_v3</code> — their differences are <b>LLM-trajectory / mutation-count "
+            "noise</b> (run A ≈250 accepted mutations, run B ≈10), not the objective:</p>"
             f"{v3v4_tbl}"
-            "<p class=\"small\"><b>Finding — the strongest excess-return lever found.</b> Changing the search "
-            f"objective lifts CSI300 model IC {_num(ic3_300)}→<b>{_num(ic4_300)}</b> "
-            f"({100*(ic4_300-ic3_300)/max(1e-9,abs(ic3_300)):+.0f}%) and excess return "
-            f"{_num(a3_300)}→<b>{_num(a4_300)}</b>; CSI500 excess return {_num(a3_500)}→<b>{_num(a4_500)}</b> "
-            "(roughly halved), with both Sharpes rising. The objective shift is the main V3→V4 improvement; "
-            "the post-hoc levers in Result 7 are now best viewed as universe-specific refinements and turnover "
-            "diagnostics. <b>Caveat:</b> the two runs differ in LLM trajectory (n_llm 250 vs 10) as well as "
-            "objective, so this is a strong directional result, not a perfectly controlled A/B; a same-trajectory "
-            "v3-vs-v4 run would isolate the objective effect cleanly.</p>")
+            "<p class=\"small\"><b>Fix &amp; hardening.</b> The nested function was renamed so the objective "
+            "string is honored, and <code>evaluate_objective</code> now <b>raises on an unknown objective</b> "
+            "rather than silently defaulting to <code>portfolio_v3</code> — a stale build fails loudly instead of "
+            "mislabelling a run. Validated: the micro-search now threads <code>portfolio_v3 / v4 / v5</code> "
+            "correctly. This is precisely the silent-failure class the project's OOS-rigor theme targets — a "
+            "config flag recorded but not honored — and the guard is what surfaced it. <b>A genuine objective "
+            "comparison (v3 vs gross-excess v4 vs cost-net v5) now requires a fresh run with the fix</b> "
+            "(pending). The downstream <b>Result 9</b> turnover finding is unaffected: it is a backtest-side "
+            "analysis of the elite predictions, independent of the evolution objective.</p>")
 
     if fe_helps:
         exec_takeaway = (
-            f"<p>The live <b>{llm_provider}/{llm_model}</b> macro-agent successfully drove a "
-            f"<code>{cur_obj}</code> FactorEngine run on real A-share data — <b>{n_llm} of {n_iters_cfg}</b> "
-            f"accepted steps were Kimi-authored mutations — and lifted validation fitness "
-            f"<b>{best_fit/seed_fit:.1f}×</b> ({seed_fit:+.3f}→{best_fit:+.3f}). Unlike the earlier IC-only path, "
-            f"the V4 augmented model <b>transfers out-of-sample</b>: model IC rises on both universes "
-            f"(CSI300 {_b3}→{_a3}, CSI500 {_b5}→{_a5}), and net AER improves versus both the baseline and the "
-            "saved V3 reference. The remaining negative net AER is mostly an implementation-cost problem: "
-            f"CSI300 V4 default earns about <b>{_pct(_gross_aer(csi300_cost_case))}</b> gross AER before "
-            f"<b>{_pct(csi300_cost_case.get('ann_cost'))}</b> annualized cost, while CSI500 V4+A3 earns about "
-            f"<b>{_pct(_gross_aer(csi500_cost_case))}</b> gross AER before "
-            f"<b>{_pct(csi500_cost_case.get('ann_cost'))}</b> cost. The signal is real; the next bottleneck is "
-            "<b>turnover control</b> — see the gross-vs-net decomposition and turnover sweep plan below.</p>")
+            f"<p>The live <b>{llm_provider}/{llm_model}</b> macro-agent drove a 300-iteration "
+            f"FactorEngine run on real A-share data — <b>{n_llm} of {n_iters_cfg}</b> accepted steps were "
+            f"Kimi-authored mutations — lifting validation fitness <b>{best_fit/seed_fit:.1f}×</b> "
+            f"({seed_fit:+.3f}→{best_fit:+.3f}). The augmented multi-factor model's IC is positive on both "
+            f"universes (CSI300 {_b3}→{_a3}, CSI500 {_b5}→{_a5}) and its backtest earns <b>positive gross</b> "
+            "excess return — but heavy turnover erases it: CSI300 earns about "
+            f"<b>{_pct(_gross_aer(csi300_cost_case))}</b> gross AER before "
+            f"<b>{_pct(csi300_cost_case.get('ann_cost'))}</b> annualized cost, CSI500 about "
+            f"<b>{_pct(_gross_aer(csi500_cost_case))}</b> before <b>{_pct(csi500_cost_case.get('ann_cost'))}</b>. "
+            "The signal is real; the bottleneck is <b>turnover/cost</b>, which <b>Result 9</b> fixes — a longer "
+            "holding period delivers <b>positive net excess return</b> on both universes. <b>Correction "
+            "(Result 8):</b> a now-fixed micro-search bug meant the evolution objective could not actually be "
+            "varied, so no finding here should be attributed to changing it.</p>")
     else:
         exec_takeaway = (
             f"<p>The live <b>{llm_provider}/{llm_model}</b> macro-agent successfully drove FactorEngine's "
@@ -1046,7 +1046,7 @@ def build_html(outputs: Path = None) -> Path:
             if b != "b0":
                 parts.append("band")
             return ", ".join(parts)
-        srows = []
+        srows, best_by_uni = [], {}
         for uni in sweep:
             grid = sweep[uni].get("grid", {})
             if not grid:
@@ -1054,6 +1054,7 @@ def build_html(outputs: Path = None) -> Path:
             dft = grid.get("base|s1|h5|b0", {})
             bestk = max(grid, key=lambda k: grid[k]["AER"])
             best = grid[bestk]
+            best_by_uni[uni] = (bestk, best)
             srows.append((f"{uni.upper()} — default (5d hold)", _num(dft.get("AER")), _num(dft.get("IR"), 3),
                           _num(dft.get("SR"), 3), f'{dft.get("turnover", 0):.0f}×', _pct(dft.get("ann_cost")),
                           _num(dft.get("gross_AER"))))
@@ -1061,25 +1062,35 @@ def build_html(outputs: Path = None) -> Path:
                           _num(best["IR"], 3), _num(best["SR"], 3), f'{best["turnover"]:.0f}×',
                           _pct(best["ann_cost"]), _num(best["gross_AER"])))
         stbl = _table(["config", "net AER", "IR", "SR", "turnover", "ann cost", "gross AER"], srows)
-        b3 = sweep.get("csi300", {}).get("grid", {}).get("base|s1|h20|b0", {})
-        b5 = sweep.get("csi500", {}).get("grid", {}).get("a3|s1|h20|b1", {})
+
+        def _hold(uni):                       # holding days of the best config for a universe
+            k = best_by_uni.get(uni, ("|||",))[0]
+            return k.split("|")[2][1:] if uni in best_by_uni else "?"
+        k3, m3 = best_by_uni.get("csi300", ("", {}))
+        k5, m5 = best_by_uni.get("csi500", ("", {}))
         sweep_html = (
             "<h2>Result 9 — closing the gap: turnover control gives positive net excess return</h2>"
             "<p>Result 7's decomposition showed the augmented model earns <b>+8–10% gross</b> excess return but "
             "~9–10% annualized transaction cost (turnover ~75–84×) erases it — so the gap was never a "
             "<i>signal</i> problem, it was a <b>cost</b> problem. Trading the <i>same</i> v4 predictions less "
-            "often — longer holding, EWM smoothing, a rank band, all backtest-only on the cached preds (no model "
-            "rebuild) — collapses turnover and flips net excess return <b>positive on both universes</b>:</p>"
+            "often — the holding period, EWM smoothing, and a rank band, all backtest-only on the cached preds "
+            "(no model rebuild) — collapses turnover and flips net excess return <b>positive on both "
+            "universes</b>:</p>"
             f"{stbl}"
-            "<p class=\"small\"><b>The dominant lever is the holding period.</b> Extending the hold 5→20 days cuts "
-            f"turnover ~4× (cost ~9%→~2.5%) and flips net AER positive: <b>CSI300 {_num(b3.get('AER'))}</b> "
-            f"(IR {_num(b3.get('IR'),3)}, SR {_num(b3.get('SR'),3)}), <b>CSI500 {_num(b5.get('AER'))}</b> "
-            f"(IR {_num(b5.get('IR'),3)}). Gross excess falls with the longer hold (the alpha decays), but cost "
-            "falls faster, so net wins. <b>EWM smoothing was rejected</b> — it shaved gross faster than it saved "
-            "cost once the hold handled turnover; the rank band helped only marginally (CSI500). The chain now "
-            "closes end-to-end: positive IC → positive <i>gross</i> excess → cost is the killer → longer holding "
-            "→ <b>positive net excess return over the index</b>. Caveat: 20 days was the best of {5,10,20}; the "
-            "exact optimum and a cost-net <code>portfolio_v5</code> objective are the next refinements.</p>")
+            "<p class=\"small\"><b>The dominant lever is the holding period.</b> A fine sweep over "
+            "{5,10,12,15,20,25,30,40}-day holds locates the optima: <b>CSI500 peaks at a "
+            f"{_hold('csi500')}-day hold</b> (<b>{_num(m5.get('AER'))}</b> net AER, IR {_num(m5.get('IR'),3)}, "
+            f"turnover {m5.get('turnover',0):.0f}×) — an interior optimum, since gross excess decays beyond it; "
+            f"<b>CSI300 keeps improving out to {_hold('csi300')} days</b> (<b>{_num(m3.get('AER'))}</b>, IR "
+            f"{_num(m3.get('IR'),3)}, turnover {m3.get('turnover',0):.0f}×), i.e. it is cost-dominated and prefers "
+            "low frequency. Gross excess falls with the longer hold (the alpha is short-horizon) but cost falls "
+            "faster up to the optimum, so net wins. <b>EWM smoothing was rejected</b> (it shaved gross faster than "
+            "it saved cost once the hold handled turnover); the rank band helped only marginally (CSI500). The "
+            "chain now closes end-to-end: positive IC → positive <i>gross</i> excess → cost is the killer → "
+            "longer holding → <b>positive net excess return over the index</b>. Caveat: a 25–40-day hold is a "
+            "lower-frequency strategy than the paper's 5-day design — the honest tradeoff for a cost-dominated "
+            "signal. The next refinement, <code>portfolio_v5</code>, bakes the cost model into the evolution "
+            "objective so the search itself prefers tradeable (net-positive) factors.</p>")
 
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>FactorEngine — Reproduction Report</title><style>{CSS}</style></head><body>

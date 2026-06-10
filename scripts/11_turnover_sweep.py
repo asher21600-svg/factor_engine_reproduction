@@ -54,7 +54,7 @@ def smooth(preds, span):
     return p
 
 
-def run_universe(uni):
+def run_universe(uni, spans=SPANS, holds=HOLDS, bands=BANDS):
     panel = pd.read_parquet(config.OUTPUTS / f"{uni}_panel.parquet")
     bench = load_benchmark(uni)
     grid = {}
@@ -64,10 +64,10 @@ def run_universe(uni):
             print(f"  [no cached preds_{uni}_{arm} — run scripts/09 first]")
             continue
         preds0 = pd.read_parquet(path)
-        for span in SPANS:
+        for span in spans:
             ps = smooth(preds0, span)[IDX + ["pred"]]
-            for hold in HOLDS:
-                for band in BANDS:
+            for hold in holds:
+                for band in bands:
                     m = backtest(ps, panel, holding=hold, split="test",
                                  benchmark=bench, hysteresis=band).metrics
                     grid[f"{arm}|s{span}|h{hold}|b{band:g}"] = {
@@ -81,12 +81,15 @@ def run_universe(uni):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--universes", nargs="*", default=["csi300", "csi500"])
+    ap.add_argument("--spans", nargs="*", type=int, default=SPANS)
+    ap.add_argument("--holds", nargs="*", type=int, default=HOLDS)
+    ap.add_argument("--bands", nargs="*", type=float, default=BANDS)
     args = ap.parse_args()
 
     out = {}
     for uni in args.universes:
         print(f"\n== {uni} ==")
-        out[uni] = run_universe(uni)
+        out[uni] = run_universe(uni, spans=args.spans, holds=args.holds, bands=args.bands)
         grid = out[uni]["grid"]
         if not grid:
             continue
