@@ -40,7 +40,7 @@ Chinese A-shares via **Qlib**, evaluated on two index universes: **CSI300** (lar
 - During evolution, IC/ICIR are aggregated across lags {1,3,5,10} days into a single `combined_score` objective.
 - Elite filtering uses fitness score **Eq. 5**: `FS = (IC*10 + ICIR + RIC*10 + RICIR)/4`.
 
-**Portfolio metrics:** Annualized Return (AR, Eq. 8), Information Ratio (IR), Maximum Drawdown (MDD, Eq. 10), Sharpe Ratio (annualized, Eq. 14). All computed on the **excess return** series (portfolio − benchmark).
+**Portfolio metrics:** Annualized Return (AR, Eq. 8), Information Ratio (IR), Maximum Drawdown (MDD, Eq. 10), Sharpe Ratio (annualized, Eq. 14), plus Annualized Excess Return (AER, Eq. 9). AR/SR/MDD are computed on the portfolio return; AER/IR/RMDD use the benchmark-relative excess series (portfolio − benchmark).
 
 **Trading strategy (Appendix A.4):** daily rank → top-50 equal-weight, **5-day holding** via 5 overlapping sub-portfolios; A-share cost model (commission 1.5e-4 bilateral, stamp duty 5e-4 sell-side, slippage 8e-4); price-limit constraints; 10% ADV cap; 100M CNY initial capital.
 

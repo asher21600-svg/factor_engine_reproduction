@@ -12,6 +12,7 @@ Plus a multi-seed robustness pass with error bars (single-factor seed vs evolved
 """
 import _bootstrap  # noqa: F401
 import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -198,7 +199,8 @@ def main():
                                   "n_evals", "n_nodes")},
            "run_config": {"baseline": args.baseline, "label": args.label,
                           "label_mode": args.label_mode, "factor_mode": args.factor_mode,
-                          "benchmark": "index" if args.use_benchmark else "equal_weight"},
+                          "benchmark": "index" if args.use_benchmark else "equal_weight",
+                          "orthogonal_max_features": os.environ.get("FE_ORTHOGONAL_MAX_FEATURES")},
            "universes": {}}
     out["evolution_summary"]["objective"] = evo.get("config", {}).get("objective", "ic_only")
     out["evolution_summary"]["elite_rule"] = evo.get("config", {}).get("elite_rule", "validation")

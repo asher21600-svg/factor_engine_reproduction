@@ -1,68 +1,68 @@
 {
   "robust": [
+    "kimi_elite_0",
+    "kimi_elite_1",
+    "kimi_elite_2",
     "claude_gk_lowvol",
-    "claude_overnight_intraday",
-    "claude_amihud_reversal",
-    "claude_pv_divergence",
-    "kimi_elite_0"
+    "kimi_elite_3"
   ],
   "universes": {
     "csi300": {
       "baseline": {
-        "IC": 0.015846028843413195,
-        "RIC": 0.018509420305538926,
-        "AR": 0.039561692787178915,
-        "SR": 0.2838438688192998,
+        "IC": 0.011538983153741982,
+        "RIC": 0.013038414004679996,
+        "AR": 0.00037369542697573976,
+        "SR": 0.1132695480812779,
         "n_features": 128
       },
       "robust_raw": {
-        "IC": 0.015892350549959067,
-        "RIC": 0.018617618989054997,
-        "AR": 0.026098794989953378,
-        "SR": 0.22681936660259208,
+        "IC": 0.012260814978626156,
+        "RIC": 0.012993072691291137,
+        "AR": -0.0020303324899827446,
+        "SR": 0.10297020924648015,
         "n_features": 133
       },
       "robust_orthogonal": {
-        "IC": 0.015529479470539778,
-        "RIC": 0.01667325733223561,
-        "AR": 0.0272725205871851,
-        "SR": 0.23187394718669402,
+        "IC": 0.007990584357887182,
+        "RIC": 0.010932780854147183,
+        "AR": -0.0032671029446682542,
+        "SR": 0.09769919101979183,
         "n_features": 133
       },
       "gate": [
         {
-          "name": "claude_gk_lowvol",
-          "marg_ic_train": 0.006608901524515358,
-          "marg_ic_valid": 0.017079281292135172,
-          "marg_ic_test": 0.004280142426268229,
-          "kept": true
-        },
-        {
-          "name": "claude_overnight_intraday",
-          "marg_ic_train": 0.012982892824251366,
-          "marg_ic_valid": 0.007845698134080136,
-          "marg_ic_test": 0.0007582405892229557,
-          "kept": true
-        },
-        {
-          "name": "claude_amihud_reversal",
-          "marg_ic_train": 0.0066433598412631205,
-          "marg_ic_valid": 0.0010681866753877625,
-          "marg_ic_test": 0.002282575960357517,
-          "kept": true
-        },
-        {
-          "name": "claude_pv_divergence",
-          "marg_ic_train": 0.006332613404393513,
-          "marg_ic_valid": 0.0009048252752474553,
-          "marg_ic_test": -0.001599125118666432,
-          "kept": true
-        },
-        {
           "name": "kimi_elite_0",
-          "marg_ic_train": 0.025376407201082772,
-          "marg_ic_valid": 0.012468053991606397,
-          "marg_ic_test": 0.0007108941199496067,
+          "marg_ic_train": 0.019105794517155557,
+          "marg_ic_valid": 0.017990444121339665,
+          "marg_ic_test": 0.003582213778987554,
+          "kept": true
+        },
+        {
+          "name": "kimi_elite_1",
+          "marg_ic_train": 0.004692725666046481,
+          "marg_ic_valid": 0.033062840491065865,
+          "marg_ic_test": 0.015248351965494815,
+          "kept": true
+        },
+        {
+          "name": "kimi_elite_2",
+          "marg_ic_train": 0.004692725666046481,
+          "marg_ic_valid": 0.033062840491065865,
+          "marg_ic_test": 0.015248351965494815,
+          "kept": true
+        },
+        {
+          "name": "claude_gk_lowvol",
+          "marg_ic_train": 0.0044517017263495775,
+          "marg_ic_valid": 0.03275277270223079,
+          "marg_ic_test": 0.015016063520263231,
+          "kept": true
+        },
+        {
+          "name": "kimi_elite_3",
+          "marg_ic_train": 0.012958436200115369,
+          "marg_ic_valid": 0.017863879095373167,
+          "marg_ic_test": 0.003910852722873374,
           "kept": true
         }
       ],
@@ -70,60 +70,60 @@
     },
     "csi500": {
       "baseline": {
-        "IC": 0.009389301025356924,
-        "RIC": 0.017284853038563298,
-        "AR": -0.0552333355729121,
-        "SR": -0.09536376289244111,
+        "IC": 0.01394622822552511,
+        "RIC": 0.02139581573750249,
+        "AR": -0.020633027908179558,
+        "SR": 0.034208536739337186,
         "n_features": 128
       },
       "robust_raw": {
-        "IC": 0.010054805603135987,
-        "RIC": 0.023153141927566293,
-        "AR": -0.0572870852789944,
-        "SR": -0.10630185599823136,
+        "IC": 0.015660735602280432,
+        "RIC": 0.027946062952284686,
+        "AR": -0.01663603668412772,
+        "SR": 0.04669748844287302,
         "n_features": 133
       },
       "robust_orthogonal": {
-        "IC": 0.013523018087253279,
-        "RIC": 0.014527395606102859,
-        "AR": -0.049802430084926574,
-        "SR": -0.06872942237521436,
+        "IC": 0.014657595312605104,
+        "RIC": 0.02695791046915586,
+        "AR": -0.015571185655581687,
+        "SR": 0.05492699436606697,
         "n_features": 133
       },
       "gate": [
         {
-          "name": "claude_gk_lowvol",
-          "marg_ic_train": 0.019375618355848695,
-          "marg_ic_valid": 0.016463771254817842,
-          "marg_ic_test": 0.0048582637035420925,
-          "kept": true
-        },
-        {
-          "name": "claude_overnight_intraday",
-          "marg_ic_train": 0.006891615794727052,
-          "marg_ic_valid": 0.0046227434613893455,
-          "marg_ic_test": 0.002877525918257995,
-          "kept": true
-        },
-        {
-          "name": "claude_amihud_reversal",
-          "marg_ic_train": 0.013431634589272887,
-          "marg_ic_valid": 0.007245166499566485,
-          "marg_ic_test": -8.742255614816203e-05,
-          "kept": true
-        },
-        {
-          "name": "claude_pv_divergence",
-          "marg_ic_train": 0.011899267683826634,
-          "marg_ic_valid": 0.0029547701027600438,
-          "marg_ic_test": 0.001509391704199243,
-          "kept": true
-        },
-        {
           "name": "kimi_elite_0",
-          "marg_ic_train": 0.03643761541699058,
-          "marg_ic_valid": 0.02552450348583811,
-          "marg_ic_test": 0.003823242027519386,
+          "marg_ic_train": 0.029710800697494242,
+          "marg_ic_valid": 0.0333745051534594,
+          "marg_ic_test": 0.008324419904603619,
+          "kept": true
+        },
+        {
+          "name": "kimi_elite_1",
+          "marg_ic_train": 0.02084954029584956,
+          "marg_ic_valid": 0.03592795586472815,
+          "marg_ic_test": 0.018440163222995524,
+          "kept": true
+        },
+        {
+          "name": "kimi_elite_2",
+          "marg_ic_train": 0.02084954029584956,
+          "marg_ic_valid": 0.03592795586472815,
+          "marg_ic_test": 0.018440163222995524,
+          "kept": true
+        },
+        {
+          "name": "claude_gk_lowvol",
+          "marg_ic_train": 0.020963945220534155,
+          "marg_ic_valid": 0.03560404850867067,
+          "marg_ic_test": 0.01823422948816123,
+          "kept": true
+        },
+        {
+          "name": "kimi_elite_3",
+          "marg_ic_train": 0.029253377949805336,
+          "marg_ic_valid": 0.033117322494901735,
+          "marg_ic_test": 0.008860731623370144,
           "kept": true
         }
       ],

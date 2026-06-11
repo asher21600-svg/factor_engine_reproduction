@@ -25,6 +25,7 @@ env/
 outputs/*.parquet
 outputs/*.log
 outputs/llm_failures/
+outputs/news_video_pipeline/
 
 # Qlib data should live outside the repo
 qlib_data/

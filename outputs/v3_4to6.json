@@ -1,36 +1,26 @@
 {
   "param_contract": {
-    "hidden_knobs": [
-      "smooth_window",
-      "turnover_decay",
-      "w4",
-      "w_turnover"
-    ],
+    "hidden_knobs": [],
     "before": {
-      "valid_fit": 0.6362618882424019,
-      "test_ic": -0.0011627007424720778
+      "valid_fit": 0.6046383412309744,
+      "test_ic": -0.0008457244074210511
     },
     "after": {
-      "valid_fit": 0.6400915005662586,
-      "test_ic": -0.0014838648798692002,
-      "tuned": {
-        "w4": 0.1398675759038568,
-        "w_turnover": 0.29087047834227914,
-        "smooth_window": 3,
-        "turnover_decay": 0.5677057798344178
-      }
+      "valid_fit": 0.6046383412309744,
+      "test_ic": -0.0008457244074210511,
+      "tuned": {}
     }
   },
   "portfolio": {
     "ic_only_top": [
       "kimi_elite_0",
-      "kimi_elite_4",
+      "kimi_elite_3",
       "kimi_elite_1"
     ],
     "portfolio_top": [
-      "claude_gk_lowvol",
-      "kimi_elite_4",
-      "kimi_elite_3"
+      "kimi_elite_1",
+      "kimi_elite_2",
+      "claude_gk_lowvol"
     ],
     "candidates": {
       "seed": {
@@ -40,34 +30,34 @@
         "score": -0.3945696377444519
       },
       "kimi_elite_0": {
-        "ic": 0.05755936723695561,
-        "turnover": 0.05468482532872776,
-        "min_year_ic": 0.012341929681584875,
-        "score": 0.041856401946256935
+        "ic": 0.05139789231628741,
+        "turnover": 0.13528508359477798,
+        "min_year_ic": -2.5993231007719593e-05,
+        "score": -0.002729137737127643
       },
       "kimi_elite_1": {
-        "ic": 0.05741296805160572,
-        "turnover": 0.052741593192259684,
-        "min_year_ic": 0.012982546923088086,
-        "score": 0.04280760423624588
+        "ic": 0.04353878134104341,
+        "turnover": 0.011326000504540024,
+        "min_year_ic": 0.02494915509180985,
+        "score": 0.05148295868513232
       },
       "kimi_elite_2": {
-        "ic": 0.056401912407574833,
-        "turnover": 0.056126634883208126,
-        "min_year_ic": 0.009172336982680945,
-        "score": 0.03853742694563205
+        "ic": 0.04353878134104341,
+        "turnover": 0.011326000504540024,
+        "min_year_ic": 0.02494915509180985,
+        "score": 0.05148295868513232
       },
       "kimi_elite_3": {
-        "ic": 0.05704223330888154,
-        "turnover": 0.049067634435614016,
-        "min_year_ic": 0.01355586682151918,
-        "score": 0.04419311294539553
+        "ic": 0.049312650204793196,
+        "turnover": 0.1443789127175612,
+        "min_year_ic": 0.0018565608497105332,
+        "score": -0.007510634457376021
       },
       "kimi_elite_4": {
-        "ic": 0.05750399568084363,
-        "turnover": 0.05411653565754848,
-        "min_year_ic": 0.02093488498838203,
-        "score": 0.046324823912015256
+        "ic": 0.03265748685413434,
+        "turnover": 0.010390796412146797,
+        "min_year_ic": 0.009714558791042133,
+        "score": 0.033358447684796684
       },
       "claude_amihud_reversal": {
         "ic": 0.02951806185730545,
@@ -102,19 +92,19 @@
     }
   },
   "plateau": {
-    "plateau_iter": 99,
-    "n_iters": 300,
-    "elapsed_s": 52491.5,
+    "plateau_iter": 15,
+    "n_iters": 65,
+    "elapsed_s": 22318.4,
     "scenarios": {
       "30": {
-        "stop_iter": 129,
-        "saved_s": 29920.155,
-        "saved_frac": 0.57
+        "stop_iter": 45,
+        "saved_s": 6867.200000000001,
+        "saved_frac": 0.3076923076923077
       },
       "50": {
-        "stop_iter": 149,
-        "saved_s": 26420.721666666665,
-        "saved_frac": 0.5033333333333333
+        "stop_iter": 65,
+        "saved_s": 0.0,
+        "saved_frac": 0.0
       }
     }
   }

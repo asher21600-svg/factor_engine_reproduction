@@ -14,6 +14,7 @@ Test metrics are computed for REPORTING only — never used for selection.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 import pandas as pd
 
@@ -91,21 +92,47 @@ def select_robust(cands: list[Candidate], k: int = 5) -> list[Candidate]:
 # V3 #3 — orthogonalize a factor vs the Alpha158 feature space (per date) and
 # gate on the residual's marginal IC, i.e. signal NOT already in the baseline.
 # ---------------------------------------------------------------------------
+def _orthogonal_base_cols(base_long: pd.DataFrame, base_cols: list) -> list:
+    """Optionally cap the Alpha158 residualization basis for faster report runs.
+
+    Exact V3 orthogonalization uses every baseline feature.  Setting
+    FE_ORTHOGONAL_MAX_FEATURES keeps the highest-variance baseline columns,
+    preserving a broad market/price/volume basis while avoiding thousands of
+    expensive full-rank per-date least-squares solves.
+    """
+    try:
+        max_features = int(os.environ.get("FE_ORTHOGONAL_MAX_FEATURES", "0") or 0)
+    except ValueError:
+        max_features = 0
+    cols = list(base_cols)
+    if max_features <= 0 or len(cols) <= max_features:
+        return cols
+
+    # Sample for speed; variance ranking is only used to choose a stable,
+    # representative residualization basis.
+    stride = max(1, len(base_long) // 200_000)
+    sample = base_long.iloc[::stride]
+    variances = sample[cols].var(numeric_only=True).sort_values(ascending=False)
+    ranked = [c for c in variances.index if c in cols]
+    return ranked[:max_features]
+
+
 def orthogonalize_vs_features(scored: pd.DataFrame, base_long: pd.DataFrame,
                               base_cols: list) -> pd.DataFrame:
     """Cross-sectional residual of `scored['value']` on the Alpha158 features,
     per date: resid = factor - X·beta (OLS with intercept). Returns
     [datetime, instrument, value=resid]."""
     import numpy as np
+    use_cols = _orthogonal_base_cols(base_long, base_cols)
     m = scored.merge(base_long, on=["datetime", "instrument"], how="inner")
-    m = m.replace([np.inf, -np.inf], np.nan).dropna(subset=["value"] + list(base_cols))
+    m = m.replace([np.inf, -np.inf], np.nan).dropna(subset=["value"] + use_cols)
     out = []
     for dt, g in m.groupby("datetime"):
         y = g["value"].to_numpy(dtype="float64")
-        if len(g) < len(base_cols) + 5:           # under-determined -> just demean
+        if len(g) < len(use_cols) + 5:           # under-determined -> just demean
             r = y - y.mean()
         else:
-            X = np.column_stack([np.ones(len(g)), g[base_cols].to_numpy(dtype="float64")])
+            X = np.column_stack([np.ones(len(g)), g[use_cols].to_numpy(dtype="float64")])
             beta, *_ = np.linalg.lstsq(X, y, rcond=None)
             r = y - X @ beta
         out.append(pd.DataFrame({"datetime": g["datetime"].to_numpy(),

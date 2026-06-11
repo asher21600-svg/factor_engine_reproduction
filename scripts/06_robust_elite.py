@@ -36,12 +36,21 @@ def _candidates(evo):
     return cands
 
 
-def _augmented_test(panel, specs, label="label"):
+def _benchmark(uni):
+    try:
+        from fe.data.qlib_loader import load_benchmark
+        return load_benchmark(uni)
+    except Exception as e:  # noqa: BLE001
+        print(f"  [benchmark unavailable for {uni}: {e}] -> equal-weight market")
+        return None
+
+
+def _augmented_test(panel, specs, uni, label="label"):
     feat, cols = build_feature_matrix(panel, specs, with_baseline=True, baseline="alpha158",
-                                      qlib_kwargs={"market": "csi300"})
-    mr = train_predict(panel, feat, cols, label=label)
+                                      qlib_kwargs={"market": uni})
+    mr = train_predict(panel, feat, cols, label=label, label_mode="date_demeaned")
     h = mr.test_metrics.headline()
-    bt = backtest(mr.preds, panel, split="test")
+    bt = backtest(mr.preds, panel, split="test", benchmark=_benchmark(uni))
     return h["IC"], h["RIC"], bt.metrics["AR"], bt.metrics["SR"]
 
 
@@ -77,11 +86,11 @@ def main():
     print("\n== A/B: augmented multi-factor model on the TEST hold-out ==")
     print(f"{'universe':8s} {'baseline':>10} {'valid-only':>11} {'robust':>9}  (IC; then SR)")
     for uni, panel in [("csi300", p300), ("csi500", p500)]:
-        b_ic, b_ric, b_ar, b_sr = _augmented_test(panel, [])
+        b_ic, b_ric, b_ar, b_sr = _augmented_test(panel, [], uni)
         vo_specs = [(c.name, c.code, c.params) for c in vo]
         rb_specs = [(c.name, c.code, c.params) for c in rb]
-        v_ic, v_ric, v_ar, v_sr = _augmented_test(panel, vo_specs)
-        r_ic, r_ric, r_ar, r_sr = _augmented_test(panel, rb_specs)
+        v_ic, v_ric, v_ar, v_sr = _augmented_test(panel, vo_specs, uni)
+        r_ic, r_ric, r_ar, r_sr = _augmented_test(panel, rb_specs, uni)
         print(f"{uni:8s} {b_ic:+10.4f} {v_ic:+11.4f} {r_ic:+9.4f}   IC")
         print(f"{'':8s} {b_sr:+10.2f} {v_sr:+11.2f} {r_sr:+9.2f}   SR")
         out["universes"][uni] = {

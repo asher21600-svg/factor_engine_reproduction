@@ -67,7 +67,7 @@ def optimize_parameters(code: str, param_space: dict, panel,
 
     history: list = []
 
-    def objective(trial):
+    def _trial_objective(trial):          # NB: must not shadow the `objective` str param
         params = dict(fixed)
         for name, spec in param_space.items():
             params[name] = _suggest(trial, name, spec)
@@ -92,7 +92,7 @@ def optimize_parameters(code: str, param_space: dict, panel,
             seed=seed, gamma=lambda n: max(1, int(BAYES_TOP_QUANTILE * n)))
 
     study = optuna.create_study(direction="maximize", sampler=smp)
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+    study.optimize(_trial_objective, n_trials=n_trials, show_progress_bar=False)
 
     best_params = dict(fixed)
     best_params.update(study.best_params)

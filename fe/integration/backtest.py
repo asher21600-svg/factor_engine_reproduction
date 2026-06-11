@@ -43,12 +43,19 @@ def _max_drawdown(cum: np.ndarray) -> float:
 
 def backtest(preds: pd.DataFrame, panel: pd.DataFrame,
              top_k: int = TOP_K, holding: int = HOLDING_DAYS,
-             split: str = "test", benchmark: pd.Series | None = None) -> BacktestResult:
+             split: str = "test", benchmark: pd.Series | None = None,
+             weighting: str = "equal", hysteresis: float = 0.0) -> BacktestResult:
     """preds: [datetime, instrument, pred] (any split); panel must have ret_1.
 
     benchmark : optional daily-return Series indexed by datetime (the real
         CSI300/CSI500 index return — paper-faithful). If None, falls back to the
         equal-weight market return (mean across the investable universe).
+    weighting : 'equal' (paper default), 'rank' (weight ∝ in-basket score rank)
+        or 'score' (weight ∝ positive mean-subtracted score) — conviction
+        weighting (excess-return plan C1).
+    hysteresis : no-trade band in [0, 1); retain currently-held names still
+        within top_k*(1+band) before adding fresh names, cutting turnover/cost
+        (plan C2). hysteresis=0 reproduces the paper's strict top-k exactly.
     """
     # restrict to the evaluation split
     dates_split = panel.loc[panel["split"] == split, "datetime"].unique()
@@ -69,17 +76,48 @@ def backtest(preds: pd.DataFrame, panel: pd.DataFrame,
     T, Nn = len(dates), len(insts)
     W = np.zeros((T, Nn))                      # target weights per day
 
-    # For each rebalance day d, the tranche holds top-k for days d+1..d+holding
-    per_name = (1.0 / N_SUBPORTFOLIOS) / top_k
+    # For each rebalance day d, the tranche holds top-k for days d+1..d+holding.
+    # Overlapping daily tranches = the holding period, so each funds 1/holding of the
+    # book (this EQUALS 1/N_SUBPORTFOLIOS at the paper's holding=5 default, and keeps the
+    # book fully invested for any holding — needed for the turnover sweep, scripts/11).
+    tranche = 1.0 / holding
+    per_name = tranche / top_k
+    buffer_k = max(top_k, int(round(top_k * (1.0 + hysteresis))))
     pred_arr = pred_wide.values
+    prev: list = []
     for di in range(T):
         row = pred_arr[di]
         valid = np.where(np.isfinite(row))[0]
         if len(valid) < top_k:
+            prev = []
             continue
-        top = valid[np.argsort(row[valid])[-top_k:]]
+        order = valid[np.argsort(row[valid])]          # ascending by score
+        fresh = list(order[-top_k:][::-1])             # best-first
+        if hysteresis > 0.0 and prev:                  # C2: no-trade band
+            buf = set(order[-buffer_k:].tolist())
+            sel = [i for i in prev if i in buf]        # keep still-good holdings
+            for i in fresh:
+                if len(sel) >= top_k:
+                    break
+                if i not in sel:
+                    sel.append(i)
+            sel = sel[:top_k]
+        else:
+            sel = fresh
+        prev = sel
+        sel_arr = np.asarray(sel, dtype=int)
+        if weighting == "equal":                       # paper default
+            w = np.full(len(sel_arr), per_name)
+        elif weighting == "rank":                      # C1: conviction by rank
+            sc = row[sel_arr]
+            rk = sc.argsort().argsort().astype(float) + 1.0   # 1=worst .. n=best
+            w = tranche * rk / rk.sum()
+        else:                                          # 'score': positive mean-subtracted
+            sc = row[sel_arr].astype(float)
+            sc = sc - sc.min()
+            w = tranche * (sc / sc.sum()) if sc.sum() > 0 else np.full(len(sel_arr), per_name)
         for t in range(di + 1, min(di + 1 + holding, T)):
-            W[t, top] += per_name
+            W[t, sel_arr] += w
 
     R = np.nan_to_num(ret_wide.values, nan=0.0)
     gross = np.einsum("ti,ti->t", W, R)        # daily gross portfolio return
